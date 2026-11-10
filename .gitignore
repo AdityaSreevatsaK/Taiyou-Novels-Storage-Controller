@@ -8,8 +8,9 @@ venv/
 .env.*
 !.env.example
 
-# User novels and private dataset artefacts
+# User novels, covers and private dataset artefacts
 novels/
+covers/
 downloads/
 backups/
 reports/
