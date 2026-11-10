@@ -74,15 +74,17 @@ class CoverTests(unittest.TestCase):
                      "url": "https://novelfull.com/unavailable.html",
                      "source_url": "https://novelfull.com/unavailable.html",
                      "status": "failed", "error": "No cover image found"},
-                    {"title": "Martial World", "website": "NovelFull",
-                     "url": "https://novelfull.com/martial-world.html",
-                     "source_url": "https://novelfull.com/martial-world.html",
-                     "cover_file": "NovelFull/martial-world-deadbeef.png",
+                    {"title": "Another Novel", "website": "NovelFull",
+                     "url": "https://novelfull.com/another-novel.html",
+                     "source_url": "https://novelfull.com/another-novel.html",
+                     "cover_file": "NovelFull/another-novel-deadbeef.png",
                      "status": "skipped"},
-                ]})
-            # One 'downloaded' and one 'skipped' entry deliberately refer to
-            # the same file; the parser succeeds, later matching flags the
-            # duplicate for manual review.
+                ]}, extra={
+                    "NovelFull/martial-world-deadbeef.png": PNG,
+                    "NovelFull/another-novel-deadbeef.png": PNG,
+                })
+            # Both downloaded and previously cached (skipped) images are valid
+            # input; failed download entries without images are omitted.
             parsed = read_covers_zip(target)
             self.assertEqual(len(parsed), 2)
             self.assertEqual(parsed[0].title, "Martial World")
