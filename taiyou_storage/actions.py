@@ -92,7 +92,20 @@ def load_catalogue(revision: str, token: str) -> tuple[list[dict], bytes]:
 
 def inspect(api, token: str) -> tuple[str, dict]:
     revision, paths = inventory(api, token)
-    books, _ = load_catalogue(revision, token)
+    # Even with a damaged catalogue the user needs the source SHA to
+    # safely initiate a backup/reset. Never emit novel names in public logs.
+    try:
+        books, _ = load_catalogue(revision, token)
+    except Exception:
+        return revision, {
+            "catalogue_valid": False,
+            "data_files": sum(p.startswith("data/") for p in paths),
+            "novel_directories": len({
+                match.group(1) for p in paths
+                if (match := re.match(r"^data/novels/([0-9a-f]{24})/", p))
+            }),
+            "note": "Catalogue could not be validated; inspect privately before any reset",
+        }
     counts = Counter(normalized_title(str(b["metadata"].get("title", "")))
                      for b in books)
     titles_repeated = sum(count - 1 for key, count in counts.items() if key and count > 1)
@@ -255,7 +268,8 @@ def destructive(api, mode: str, backup_repo: str, token: str,
     else:
         # delete_repo has no parent_commit protection; revision was checked
         # immediately beforehand. Stop if the repository has become public.
-        private_dataset(api, DEFAULT_REPO, token)
+        if private_dataset(api, DEFAULT_REPO, token) != revision:
+            raise ActionError("Dataset revision changed before repository deletion")
         api.delete_repo(repo_id=DEFAULT_REPO, repo_type="dataset", token=token)
         print("SUCCESS: private Hugging Face dataset repository DELETED.")
         print("Restoring files requires creating a new PRIVATE dataset from the private backup.")

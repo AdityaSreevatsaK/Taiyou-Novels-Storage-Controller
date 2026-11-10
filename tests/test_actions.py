@@ -80,6 +80,16 @@ class ActionSafetyTests(unittest.TestCase):
         self.assertEqual(result["missing_epubs"], 0)
         self.assertNotIn("Private novel", str(result))
 
+    def test_inspect_emits_revision_when_catalogue_corrupt(self):
+        api = FakeAPI()
+        with patch("taiyou_storage.actions.load_catalogue",
+                   side_effect=ValueError("malformed source")):
+            revision, result = inspect(api, "token")
+        self.assertEqual(revision, api.sha)
+        self.assertFalse(result["catalogue_valid"])
+        self.assertEqual(result["data_files"], 3)
+        self.assertNotIn("malformed source", str(result))
+
     def test_backup_failure_never_deletes(self):
         api = FakeAPI()
         with patch("taiyou_storage.actions.copy_to_private_backup",
