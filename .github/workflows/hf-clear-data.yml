@@ -1,48 +1,32 @@
-name: "HF - CLEAR ALL data (backup first)"
+name: "HF - CLEAR ALL data"
 on:
   workflow_dispatch:
     inputs:
-      expected_revision:
-        description: "Exact 40-character SOURCE SHA from HF - Inspect library"
+      confirm_clear:
+        description: "I understand this deletes all novel data (NO BACKUP)"
         required: true
-        type: string
-      confirmation:
-        description: "Type exactly CLEAR DATA AdityaSreevatsaK/Taiyous-Novels"
-        required: true
-        type: string
-      backup_repository:
-        description: "Second PRIVATE HF dataset to receive verified backup"
-        required: true
-        default: "AdityaSreevatsaK/Taiyous-Novels-Backup"
-        type: string
+        default: false
+        type: boolean
 
 permissions:
   contents: read
-
 concurrency:
   group: hf-storage-controller
   cancel-in-progress: false
 
 jobs:
   clear:
-    environment: hf-destructive
+    if: ${{ inputs.confirm_clear == true }}
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: python -m pip install -r requirements.txt
-      - name: Full private backup verification THEN revision-guarded data/ reset
+      - name: Clear private HF library data
         env:
           HF_TOKEN: ${{ secrets.HF_STORAGE_CONTROLLER_TOKEN }}
-          BACKUP_REPO: ${{ inputs.backup_repository }}
-          EXPECTED_SHA: ${{ inputs.expected_revision }}
-          CONFIRMATION: ${{ inputs.confirmation }}
           HF_HUB_DISABLE_PROGRESS_BARS: "1"
-        run: >-
-          python -m taiyou_storage.actions clear
-          --backup-repo "$BACKUP_REPO"
-          --expected-revision "$EXPECTED_SHA"
-          --confirmation "$CONFIRMATION"
+        run: python -m taiyou_storage.actions clear --yes
