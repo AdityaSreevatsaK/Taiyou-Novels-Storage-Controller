@@ -28,6 +28,7 @@ The utilities use the existing version 1 dataset catalogue (data/library.json). 
 | 08_restore_novel.cmd | Reserved for future restore operation |
 | 09_delete_novel.cmd | Reserved for future safe deletion |
 | 10_upload_covers.cmd | Import cover images from Downloaded_Covers.zip, with preview and conflict checks |
+| 11_clear_hf_data.cmd | Preview and optionally clear the private HF dataset after verified full backup |
 
 ### Cover image uploads
 
@@ -75,3 +76,11 @@ MIT. Applies to the controller code, not the novel texts or cover artwork.
 ### Cover manifest compatibility
 
 The uploader accepts the actual Novel_Library `download_covers.py` summary manifest with `results` and `downloaded`/`skipped`/`failed` statuses. Failed rows are skipped because no image exists. You may supply `covers/novel-cover-images.zip`, or the `covers/` folder itself when it contains exactly one ZIP. The CMD launcher strips pasted surrounding double quotes before forwarding paths containing spaces.
+
+### Database reset (destructive)
+
+Run 11_clear_hf_data.cmd to preview the data/ files currently stored in your private HF dataset. Type YES to begin the backup-first reset; then enter the exact dataset repository ID. The controller downloads every data/ file at a pinned revision into a timestamped backups/before-reset-... directory and verifies SHA-256 checksums. It requires a second confirmation using a revision-bound phrase, checks that the dataset revision has not changed, and then commits the deletion of all data/ files while replacing data/library.json with a valid empty catalogue.
+
+This clears **all** novels, EPUBs, archives, covers, user reviews, progress and collections stored under data/. It does not selectively remove duplicates. Non-data/ files and the Hugging Face dataset repository itself remain in place. Historical Git/LFS data may remain; this is not a storage-history purge. **Automatic restore is not yet available**, so retain the full local backup and your novel ZIPs. Close other reader clients before resetting to avoid stale cache or resynchronisation.
+
+The command requires an interactive terminal. Normal execution is preview-only (py -m taiyou_storage.reset); explicit --apply and two manual confirmations are required for changes. CI does not have credentials or execute destructive operations.
