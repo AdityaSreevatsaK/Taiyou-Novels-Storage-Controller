@@ -40,10 +40,10 @@ def validate_repo(value: str) -> str:
 
 
 def verify_gate(action: str, confirmed: bool) -> None:
-    if action not in ("clear", "delete-repository"):
-        raise ActionError("Unsupported destructive action")
+    if action != "clear":
+        raise ActionError("Only the data-clearing operation is supported")
     if confirmed is not True:
-        raise ActionError("Destructive action requires the confirmation checkbox")
+        raise ActionError("Data clearing requires the confirmation checkbox")
 
 def private_dataset(api, repo: str, token: str) -> str:
     info = api.dataset_info(repo, token=token)
@@ -237,28 +237,23 @@ def report_to_private_backup(api, backup_repo: str, token: str) -> None:
     print("Open the backup dataset to view names and details; none are posted in public artifacts.")
 
 
-def destructive(api, mode: str, token: str, confirmed: bool) -> None:
-    """No automatic backup. Revision checks are internal, not user inputs."""
-    verify_gate(mode, confirmed)
+def clear_data(api, token: str, confirmed: bool) -> None:
+    """Clear private dataset files only. The dataset repository is never deleted."""
+    verify_gate("clear", confirmed)
     revision, paths = inventory(api, token)
-    if mode == "clear":
-        targets = select_data_files(paths)
-        if not targets:
-            raise ActionError("No data/ files to clear")
+    targets = select_data_files(paths)
+    if not targets:
+        raise ActionError("No data/ files to clear")
     latest_revision, latest_paths = inventory(api, token)
     if latest_revision != revision or latest_paths != paths:
         raise ActionError("Dataset changed during pre-delete checks; no deletion performed")
-    if mode == "clear":
-        api.create_commit(repo_id=DEFAULT_REPO, repo_type="dataset", token=token,
-                          parent_commit=revision, operations=operations_for(targets),
-                          commit_message="Clear all private library data (owner confirmed)")
-        print("SUCCESS: data/ files cleared; empty library catalogue remains.")
-    else:
-        # Hugging Face repository deletion has no atomic revision/parent guard.
-        if private_dataset(api, DEFAULT_REPO, token) != revision:
-            raise ActionError("Dataset changed before repository deletion")
-        api.delete_repo(repo_id=DEFAULT_REPO, repo_type="dataset", token=token)
-        print("SUCCESS: private HF dataset repository deleted. No backup created.")
+    api.create_commit(
+        repo_id=DEFAULT_REPO, repo_type="dataset", token=token,
+        parent_commit=revision,
+        operations=operations_for(targets),
+        commit_message="Clear all private library data (owner confirmed)")
+    print("SUCCESS: data/ files cleared; empty library catalogue remains.")
+
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Private HF storage GitHub Actions")
@@ -267,9 +262,8 @@ def main(argv=None) -> int:
     for action in ("report", "backup"):
         p = commands.add_parser(action)
         p.add_argument("--backup-repo", required=True)
-    for action in ("clear", "delete-repository"):
-        p = commands.add_parser(action)
-        p.add_argument("--yes", action="store_true", help="Explicit confirmation")
+    p = commands.add_parser("clear")
+    p.add_argument("--yes", action="store_true", help="Explicit confirmation")
     args = parser.parse_args(argv)
     token = os.environ.get("HF_TOKEN", "").strip()
     if not token:
@@ -287,9 +281,8 @@ def main(argv=None) -> int:
         elif args.action == "backup":
             revision, paths = inventory(api, token)
             copy_to_private_backup(api, args.backup_repo, token, revision, paths)
-        else:
-            mode = "clear" if args.action == "clear" else "delete-repository"
-            destructive(api, mode, token, args.yes)
+        elif args.action == "clear":
+            clear_data(api, token, args.yes)
         return 0
     except ActionError as exc:
         print("ERROR:", exc, file=sys.stderr)
