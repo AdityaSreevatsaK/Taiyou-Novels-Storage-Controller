@@ -77,15 +77,24 @@ def _manifest_records(obj: object) -> list[dict]:
         records = obj
     elif isinstance(obj, dict) and "cover_file" in obj:
         records = [obj]
+    elif isinstance(obj, dict) and "results" in obj:
+        # Novel_Library/tools/download_covers.py emits a summary with "results".
+        # Failed downloads lack cover_file and MUST NOT be treated as inputs.
+        records = obj["results"]
+        if not isinstance(records, list):
+            raise CoverError("results must be an array")
+        if len(records) > MAX_COVERS or any(not isinstance(x, dict) for x in records):
+            raise CoverError("results is too large or contains invalid entries")
+        records = [x for x in records if x.get("status") in ("downloaded", "skipped")]
     elif isinstance(obj, dict):
         records = next((obj[k] for k in ("covers", "novels", "items", "entries")
                         if k in obj), None)
     else:
         records = None
     if not isinstance(records, list):
-        raise CoverError("Expected a manifest entry, list of entries or {'covers': [...]}")
+        raise CoverError("Expected a manifest entry, list, or an object with results/covers")
     if not records or len(records) > MAX_COVERS or any(not isinstance(x, dict) for x in records):
-        raise CoverError("Cover manifest is empty, too large or contains invalid entries")
+        raise CoverError("No usable cover images found, or manifest contains invalid entries")
     return records
 
 
@@ -147,8 +156,15 @@ def _parse_zip(z: zipfile.ZipFile, nested: bool = False) -> list[Cover]:
 
 
 def read_covers_zip(path: Path) -> list[Cover]:
-    if not path.is_file() or path.stat().st_size > MAX_ARCHIVE:
-        raise CoverError("Cover ZIP missing or exceeds 512 MiB")
+    if path.is_dir():
+        options = sorted(x for x in path.iterdir() if x.is_file() and x.suffix.lower() == ".zip")
+        if len(options) != 1:
+            raise CoverError(f"Directory contains {len(options)} ZIP files; specify the exact ZIP filename")
+        path = options[0]
+    if not path.is_file():
+        raise CoverError(f"Cover ZIP file not found: {path}")
+    if path.stat().st_size > MAX_ARCHIVE:
+        raise CoverError(f"Cover ZIP exceeds 512 MiB: {path}")
     try:
         with zipfile.ZipFile(path) as z:
             return _parse_zip(z)
