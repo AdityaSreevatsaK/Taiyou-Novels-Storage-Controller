@@ -90,10 +90,11 @@ The command requires an interactive terminal. Normal execution is preview-only (
 Open [Actions](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions) and select a workflow.
 
 - **HF - CLEAR ALL data**: manually run, tick its single confirmation checkbox, then click Run workflow. Deletes all `data/` contents (including novels, covers and personal notes) and recreates an empty catalogue. **Keeps** the private HF dataset repository.
-- **HF - DELETE ENTIRE dataset repository**: manually run, tick its single confirmation checkbox, then click Run workflow. Deletes the **entire private Hugging Face dataset repository**, including history.
-- **Optional backups** are available via the separate `HF - Back up entire dataset PRIVATELY` Action. Neither deletion Action creates or requires a backup.
+- **Optional backups** are available via the separate `HF - Back up entire dataset PRIVATELY` Action. The clear-data Action does not create or require a backup.
 - **Read-only inspection**, **private novel lists/conflict reports**, and **cover uploads from Novel_Library artifacts** have separate manual Actions.
 
-You need the GitHub Actions secret `HF_STORAGE_CONTROLLER_TOKEN` with sufficient Hugging Face permissions. No SHA, backup dataset or typed phrase is required for deletion. Both Actions automatically verify the target is a private dataset and check its state internally. **Deletion is permanent if you have no other copies.** The local `11_clear_hf_data.cmd` is a separate backup-first command and has not been changed.
+You need the GitHub Actions secret `HF_STORAGE_CONTROLLER_TOKEN` with sufficient Hugging Face permissions. No SHA, backup dataset or typed phrase is required for clearing data. The Action verifies that the dataset is private and checks its state internally. **Deleted contents may be unrecoverable if you have no other copies.** The local `11_clear_hf_data.cmd` is a separate backup-first command and has not been changed.
 
 See [GitHub Actions setup and safety](docs/GITHUB_ACTIONS.md).
+
+The **full dataset-repository deletion Action has been permanently removed from the current codebase**. Only data clearing is offered. Old GitHub workflow runs may still appear in the Actions history, but they cannot be restarted to delete a repository using the current branch.

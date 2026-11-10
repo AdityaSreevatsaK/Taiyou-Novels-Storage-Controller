@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from taiyou_storage.actions import (
-    ActionError, destructive, inspect, safe_paths, validate_repo, verify_gate,
+    ActionError, clear_data, inspect, safe_paths, validate_repo, verify_gate,
 )
 
 
@@ -28,9 +28,6 @@ class FakeAPI:
     def create_commit(self, **kwargs):
         self.commits.append(kwargs)
 
-    def delete_repo(self, **kwargs):
-        self.deletes.append(kwargs)
-
 
 class ActionSafetyTests(unittest.TestCase):
     def test_bad_backup_repo_blocked(self):
@@ -51,40 +48,28 @@ class ActionSafetyTests(unittest.TestCase):
 
     def test_checkbox_requires_real_true(self):
         verify_gate("clear", True)
-        verify_gate("delete-repository", True)
         for value in (False, None, "true", 1):
             with self.subTest(value=value), self.assertRaises(ActionError):
                 verify_gate("clear", value)
         with self.assertRaises(ActionError):
-            verify_gate("other", True)
+            verify_gate("delete-repository", True)
 
     def test_no_checkbox_no_mutation(self):
         api = FakeAPI()
-        for mode in ("clear", "delete-repository"):
-            with self.assertRaises(ActionError):
-                destructive(api, mode, "token", False)
+        with self.assertRaises(ActionError):
+            clear_data(api, "token", False)
         self.assertFalse(api.commits)
-        self.assertFalse(api.deletes)
 
-    def test_clear_without_backup(self):
+    def test_clear_without_backup_preserves_dataset_repository(self):
         api = FakeAPI()
         with patch("taiyou_storage.actions.copy_to_private_backup") as backup:
-            destructive(api, "clear", "token", True)
+            clear_data(api, "token", True)
             backup.assert_not_called()
         self.assertEqual(api.commits[0]["parent_commit"], api.sha)
-        self.assertFalse(api.deletes)
+        self.assertEqual(api.commits[0]["repo_id"], "AdityaSreevatsaK/Taiyous-Novels")
         names = [op.path_in_repo for op in api.commits[0]["operations"]]
         self.assertIn("data/library.json", names)
         self.assertNotIn(".gitattributes", names)
-
-    def test_delete_repo_without_backup(self):
-        api = FakeAPI()
-        with patch("taiyou_storage.actions.copy_to_private_backup") as backup:
-            destructive(api, "delete-repository", "token", True)
-            backup.assert_not_called()
-        self.assertEqual(len(api.deletes), 1)
-        self.assertEqual(api.deletes[0]["repo_id"], "AdityaSreevatsaK/Taiyous-Novels")
-        self.assertFalse(api.commits)
 
     def test_revision_race_prevents_clear(self):
         api = FakeAPI()
@@ -98,23 +83,8 @@ class ActionSafetyTests(unittest.TestCase):
             return original(*args, **kwargs)
         with patch.object(api, "dataset_info", side_effect=changed):
             with self.assertRaisesRegex(ActionError, "changed during pre-delete"):
-                destructive(api, "clear", "token", True)
+                clear_data(api, "token", True)
         self.assertFalse(api.commits)
-
-    def test_revision_race_prevents_dataset_delete(self):
-        api = FakeAPI()
-        original = api.dataset_info
-        calls = 0
-        def changed(*args, **kwargs):
-            nonlocal calls
-            calls += 1
-            if calls >= 3:
-                api.sha = "b" * 40
-            return original(*args, **kwargs)
-        with patch.object(api, "dataset_info", side_effect=changed):
-            with self.assertRaisesRegex(ActionError, "changed before repository deletion"):
-                destructive(api, "delete-repository", "token", True)
-        self.assertFalse(api.deletes)
 
     def test_inspect_counts_only(self):
         api = FakeAPI()
