@@ -1,0 +1,33 @@
+name: "HF - Export novel names and conflicts PRIVATELY"
+on:
+  workflow_dispatch:
+    inputs:
+      backup_repository:
+        description: "PRIVATE HF dataset for reports (auto-created private if permitted)"
+        required: true
+        default: "AdityaSreevatsaK/Taiyous-Novels-Backup"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hf-storage-controller
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements.txt
+      - name: Save CSV reports to private HF dataset (never public artifacts)
+        env:
+          HF_TOKEN: ${{ secrets.HF_STORAGE_CONTROLLER_TOKEN }}
+          BACKUP_REPO: ${{ inputs.backup_repository }}
+          HF_HUB_DISABLE_PROGRESS_BARS: "1"
+        run: python -m taiyou_storage.actions report --backup-repo "$BACKUP_REPO"
