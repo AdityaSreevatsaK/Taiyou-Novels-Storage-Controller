@@ -1,0 +1,1 @@
+"""Taiyou Novels Storage Controller."""
