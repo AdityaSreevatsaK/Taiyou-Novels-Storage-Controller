@@ -84,3 +84,15 @@ Run 11_clear_hf_data.cmd to preview the data/ files currently stored in your pri
 This clears **all** novels, EPUBs, archives, covers, user reviews, progress and collections stored under data/. It does not selectively remove duplicates. Non-data/ files and the Hugging Face dataset repository itself remain in place. Historical Git/LFS data may remain; this is not a storage-history purge. **Automatic restore is not yet available**, so retain the full local backup and your novel ZIPs. Close other reader clients before resetting to avoid stale cache or resynchronisation.
 
 The command requires an interactive terminal. Normal execution is preview-only (py -m taiyou_storage.reset); explicit --apply and two manual confirmations are required for changes. CI does not have credentials or execute destructive operations.
+
+## GitHub Actions (no local CMD required for remote operations)
+
+You can now **Run workflow** under GitHub Actions for private-dataset inspection,
+private novel-list/conflict reports, a full private backup, uploading covers directly
+from a Novel_Library Actions artifact, or full data/dataset deletion with backup-first
+safeguards. The public GitHub repository NEVER hosts private novel backup artifacts.
+
+See [GitHub Actions setup and safety](docs/GITHUB_ACTIONS.md). A GitHub Actions secret
+named HF_STORAGE_CONTROLLER_TOKEN is required, and source/backup HF datasets must
+remain private. Bulk ZIP uploads still require local files until a verified remote
+artifact adapter exists.

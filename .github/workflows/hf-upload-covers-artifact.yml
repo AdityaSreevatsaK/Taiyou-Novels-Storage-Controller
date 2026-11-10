@@ -1,0 +1,78 @@
+name: "HF - Upload covers from Novel_Library artifact"
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Covers - Download run ID from RichardDaffern/Novel_Library"
+        required: true
+        type: string
+      apply_changes:
+        description: "Actually upload to private HF (false = preview only)"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: hf-storage-controller
+  cancel-in-progress: false
+
+jobs:
+  covers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements.txt
+      - name: Download cover-only artifact from Novel_Library
+        uses: actions/download-artifact@v4
+        with:
+          repository: RichardDaffern/Novel_Library
+          run-id: ${{ inputs.source_run_id }}
+          name: novel-cover-images
+          github-token: ${{ secrets.NOVEL_LIBRARY_ACTIONS_TOKEN || github.token }}
+          path: incoming/covers
+      - name: Package cover contents locally on runner
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile, ZIP_DEFLATED
+          root = Path("incoming/covers")
+          if not root.is_dir() or not list(root.rglob("covers_manifest.json")):
+              raise SystemExit("Cover artifact is missing covers_manifest.json")
+          with ZipFile("incoming/covers.zip", "w", compression=ZIP_DEFLATED) as archive:
+              for p in sorted(root.rglob("*")):
+                  if p.is_file():
+                      archive.write(p, p.relative_to(root).as_posix())
+          print("Cover artifact packaged without exposing private contents.")
+          PY
+      - name: Preview private cover matches (details suppressed from public logs)
+        env:
+          HF_TOKEN: ${{ secrets.HF_STORAGE_CONTROLLER_TOKEN }}
+          HF_HUB_DISABLE_PROGRESS_BARS: "1"
+        shell: bash
+        run: |
+          if ! python -m taiyou_storage.covers incoming/covers.zip >"$RUNNER_TEMP/private-cover-log.txt" 2>&1; then
+            echo "::error::Private cover preview failed; review locally for details."
+            exit 1
+          fi
+          echo "Private cover preview succeeded."
+      - name: Upload changed covers to private HF (opt-in)
+        if: ${{ inputs.apply_changes == true }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_STORAGE_CONTROLLER_TOKEN }}
+          HF_HUB_DISABLE_PROGRESS_BARS: "1"
+        shell: bash
+        run: |
+          if ! python -m taiyou_storage.covers incoming/covers.zip --apply >"$RUNNER_TEMP/private-cover-log.txt" 2>&1; then
+            echo "::error::Cover upload failed; some earlier covers may have uploaded. Inspect privately before retrying."
+            exit 1
+          fi
+          echo "Private cover upload completed."
