@@ -58,6 +58,59 @@ class CoverTests(unittest.TestCase):
                    prefix="Downloaded_Covers/", nested=True)
             self.assertEqual(len(read_covers_zip(target)), 1)
 
+
+    def test_actual_retriever_results_manifest(self):
+        with TemporaryDirectory() as d:
+            target = Path(d) / "novel-cover-images.zip"
+            archive(target, {
+                "total": 3, "downloaded": 1, "skipped": 1, "failed": 1,
+                "results": [
+                    {"title": "Martial World", "website": "NovelFull",
+                     "url": "https://novelfull.com/martial-world.html",
+                     "source_url": "https://novelfull.com/martial-world.html",
+                     "cover_file": "NovelFull/martial-world-deadbeef.png",
+                     "status": "downloaded"},
+                    {"title": "Unavailable", "website": "NovelFull",
+                     "url": "https://novelfull.com/unavailable.html",
+                     "source_url": "https://novelfull.com/unavailable.html",
+                     "status": "failed", "error": "No cover image found"},
+                    {"title": "Martial World", "website": "NovelFull",
+                     "url": "https://novelfull.com/martial-world.html",
+                     "source_url": "https://novelfull.com/martial-world.html",
+                     "cover_file": "NovelFull/martial-world-deadbeef.png",
+                     "status": "skipped"},
+                ]})
+            # One 'downloaded' and one 'skipped' entry deliberately refer to
+            # the same file; the parser succeeds, later matching flags the
+            # duplicate for manual review.
+            parsed = read_covers_zip(target)
+            self.assertEqual(len(parsed), 2)
+            self.assertEqual(parsed[0].title, "Martial World")
+
+    def test_results_with_failed_entries_only(self):
+        with TemporaryDirectory() as d:
+            target = Path(d) / "novel-cover-images.zip"
+            archive(target, {"total": 1, "downloaded": 0, "skipped": 0,
+                    "failed": 1, "results": [
+                        {"title": "Unavailable", "source_url": "https://novelfull.com/unavailable.html",
+                         "status": "failed", "error": "Not available"}]})
+            with self.assertRaisesRegex(CoverError, "No usable cover"):
+                read_covers_zip(target)
+
+    def test_folder_path_with_single_zip(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            archive(root / "novel-cover-images.zip", {
+                "total": 1, "downloaded": 1, "failed": 0, "skipped": 0,
+                "results": [{"title": "Martial World", "website": "NovelFull",
+                  "source_url": "https://novelfull.com/martial-world.html",
+                  "cover_file": "NovelFull/martial-world-deadbeef.png",
+                  "status": "downloaded"}]})
+            self.assertEqual(len(read_covers_zip(root)), 1)
+            (root / "extra.zip").write_bytes(b"")
+            with self.assertRaisesRegex(CoverError, "specify the exact ZIP"):
+                read_covers_zip(root)
+
     def test_block_zip_slip(self):
         with TemporaryDirectory() as d:
             target = Path(d) / "bad.zip"

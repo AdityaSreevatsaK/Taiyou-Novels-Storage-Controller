@@ -71,3 +71,7 @@ Windows and Linux CI run on Python 3.11 and 3.12.
 ## Licence
 
 MIT. Applies to the controller code, not the novel texts or cover artwork.
+
+### Cover manifest compatibility
+
+The uploader accepts the actual Novel_Library `download_covers.py` summary manifest with `results` and `downloaded`/`skipped`/`failed` statuses. Failed rows are skipped because no image exists. You may supply `covers/novel-cover-images.zip`, or the `covers/` folder itself when it contains exactly one ZIP. The CMD launcher strips pasted surrounding double quotes before forwarding paths containing spaces.
