@@ -1,68 +1,45 @@
-# GitHub Actions: Private Hugging Face Storage Operations
+# GitHub Actions - Hugging Face storage controller
 
-This repository is **PUBLIC**. Treat workflow logs and artifacts as publicly accessible.
-Do NOT upload novel ZIPs, EPUBs, covers, title reports or private backups
-as GitHub Actions artifacts.
+This GitHub repository is **PUBLIC**, but your novel dataset remains PRIVATE. Workflow logs must never display private novel contents or upload novel ZIPs, EPUBs, covers, notes or title reports as GitHub Actions artifacts.
 
 ## One-time setup
 
-In **GitHub > Taiyou-Novels-Storage-Controller > Settings > Secrets and variables
-> Actions**, add a repository secret called **HF_STORAGE_CONTROLLER_TOKEN**.
+Open GitHub repository **Settings > Secrets and variables > Actions** and create a repository secret named `HF_STORAGE_CONTROLLER_TOKEN`. Use a Hugging Face token with permission to modify your private `AdityaSreevatsaK/Taiyous-Novels` dataset. Deleting the whole repository requires the relevant Hugging Face deletion permission.
 
-This Hugging Face token must have read/write access to the source private dataset
-AdityaSreevatsaK/Taiyous-Novels and to a separate PRIVATE backup dataset,
-such as AdityaSreevatsaK/Taiyous-Novels-Backup. The backup dataset may be created
-automatically as private if your token has that permission. To use full dataset
-deletion, the token must also have the necessary Hugging Face delete permission.
+For the optional private reports/backup workflows, the token also needs access to a **separate PRIVATE** Hugging Face dataset, such as `AdityaSreevatsaK/Taiyous-Novels-Backup` (created automatically as private if allowed). This second dataset is **not needed for deletion**.
 
-For cover import directly from another GitHub repository's Actions run, add
-**NOVEL_LIBRARY_ACTIONS_TOKEN** with permission to read Actions artifacts in
-RichardDaffern/Novel_Library if the built-in GitHub token lacks cross-repo access.
-The download workflow uses that token only for source-artifact retrieval.
+The cover import workflow can use `NOVEL_LIBRARY_ACTIONS_TOKEN` if the standard GitHub token cannot read the `RichardDaffern/Novel_Library` Actions artifact.
 
-Optionally create GitHub Environment **hf-destructive** and configure required
-reviewers under Settings > Environments to add approval before either destructive
-operation. Review policies depend on your GitHub plan/repository settings.
+## Delete with one checkbox
 
-## Run workflows
+1. Open [GitHub Actions](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions).
+2. Choose **HF - CLEAR ALL data** or **HF - DELETE ENTIRE dataset repository**.
+3. Click **Run workflow**, tick the single acknowledgment checkbox, and run it.
 
-Go to Actions and choose one of:
+No backup, source SHA, typed confirmation or extra dataset input is needed. The Action will be **skipped** unless its checkbox is checked. Nothing deletes automatically or on a schedule.
 
-| Workflow | Result |
+| Action | Exactly what gets deleted |
 |---|---|
-| HF - Inspect library (read only) | Displays source Git SHA, counts, possible duplicate titles and orphan-folder count; **no novel titles in public logs** |
-| HF - Export novel names and conflicts PRIVATELY | Stores library.json, novels.csv and conflicts.csv in PRIVATE backup dataset under reports/ |
-| HF - Back up entire dataset PRIVATELY | Copies every source file to snapshots/<SHA>/ in PRIVATE backup dataset, verifies each SHA-256 against remote copy; **no GitHub artifact** |
-| HF - Upload covers from Novel_Library artifact | Downloads an existing cover-only Actions artifact by run ID, validates, previews, and uploads only if apply_changes is enabled |
-| HF - CLEAR ALL data (backup first) | **Destructive:** full independent private backup and verification, then deletes all data/ files except a recreated empty library.json |
-| HF - DELETE ENTIRE dataset repository (backup first) | **More destructive:** full independent private backup and verification, then deletes the whole Hugging Face DATASET repository, including its Git history |
+| **HF - CLEAR ALL data** | All files under `data/`, including novels, EPUBs, ZIPs, covers, personal reviews, reading progress and collections. The private dataset repository remains, with an empty `data/library.json`. Git/LFS history may still retain old blobs. |
+| **HF - DELETE ENTIRE dataset repository** | The complete private Hugging Face dataset repository **including its history**. The Novel Reader App loses its storage source until a compatible private dataset is recreated. |
 
-For both destructive actions:
-1. Run **HF - Inspect library** and copy its complete 40-character SOURCE REVISION.
-2. Select the desired destructive workflow and paste the source revision.
-3. Type its exact required phrase: either
-   CLEAR DATA AdityaSreevatsaK/Taiyous-Novels
-   or DELETE DATASET AdityaSreevatsaK/Taiyous-Novels.
-4. For full repository deletion, also tick the irreversible history-loss acknowledgement.
-5. The workflow creates/uses a **different, verified PRIVATE Hugging Face dataset**,
-   copies **all** files there and verifies hashes before attempting deletion.
-6. If the backup fails, is public, or the source revision changes: **NO deletion**.
+**Warning:** These workflows do **not** create backups. Without other saved copies, deletion can be irreversible. The scripts still perform internal private-dataset identity checks and a last-minute repository state check. Those checks require **no user input**; full repository deletion cannot be made transactionally revision-conditional in the HF API.
 
-**WARNING:** Full dataset repository deletion destroys the repository and its
-history. The private backup contains a file snapshot, NOT the original Git history,
-and must be restored into a newly created private dataset to recover the files.
-An interrupted job may leave a partial private backup, but does not delete anything
-until every file is verified. HF repository deletion has no conditional parent-commit
-API, so avoid other writers during that operation.
+## Other available manual workflows
 
-## What remains local-only
+| Action | Purpose |
+|---|---|
+| **HF - Inspect library (read only)** | Counts books, folders, missing files and apparent duplicates, without exposing titles in public logs |
+| **HF - Export novel names and conflicts PRIVATELY** | Saves sensitive book lists and conflicts in your separate private backup dataset |
+| **HF - Back up entire dataset PRIVATELY** | Optional full private snapshot with SHA-256 verification |
+| **HF - Upload covers from Novel_Library artifact** | Imports cover images from an existing source Actions artifact by run ID; preview by default |
 
-- Bulk upload of ZIPs from a **Windows local folder**. GitHub Actions cannot see
-  local files directly. To add remote bulk uploads, we must first define a safe
-  Novel_Library artifact-to-archive converter and verify the exact artifact layout.
-- Local ZIP sync status: requires local novel files.
-- Restoring a whole library or removing an individual duplicate: not yet implemented.
-- Full content-integrity auditing: planned.
+The local `11_clear_hf_data.cmd` retains its own backup-first procedure; the **GitHub Actions deletion commands** are the simplified checkbox-only alternatives.
 
-Routine Python CI remains offline, has **no** Hugging Face credentials, and never
-writes to either dataset. No scheduled destructive tasks are enabled.
+## Still local-only
+
+- Uploading ZIP files that exist solely on your Windows computer.
+- Comparing your local ZIP contents with Hugging Face.
+- Repairing single-novel duplicates and restoring an entire library (not yet implemented).
+
+CI remains offline and is never allowed to touch the real Hugging Face dataset.

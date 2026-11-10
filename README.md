@@ -85,14 +85,15 @@ This clears **all** novels, EPUBs, archives, covers, user reviews, progress and 
 
 The command requires an interactive terminal. Normal execution is preview-only (py -m taiyou_storage.reset); explicit --apply and two manual confirmations are required for changes. CI does not have credentials or execute destructive operations.
 
-## GitHub Actions (no local CMD required for remote operations)
+## GitHub Actions (remote operations)
 
-You can now **Run workflow** under GitHub Actions for private-dataset inspection,
-private novel-list/conflict reports, a full private backup, uploading covers directly
-from a Novel_Library Actions artifact, or full data/dataset deletion with backup-first
-safeguards. The public GitHub repository NEVER hosts private novel backup artifacts.
+Open [Actions](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions) and select a workflow.
 
-See [GitHub Actions setup and safety](docs/GITHUB_ACTIONS.md). A GitHub Actions secret
-named HF_STORAGE_CONTROLLER_TOKEN is required, and source/backup HF datasets must
-remain private. Bulk ZIP uploads still require local files until a verified remote
-artifact adapter exists.
+- **HF - CLEAR ALL data**: manually run, tick its single confirmation checkbox, then click Run workflow. Deletes all `data/` contents (including novels, covers and personal notes) and recreates an empty catalogue. **Keeps** the private HF dataset repository.
+- **HF - DELETE ENTIRE dataset repository**: manually run, tick its single confirmation checkbox, then click Run workflow. Deletes the **entire private Hugging Face dataset repository**, including history.
+- **Optional backups** are available via the separate `HF - Back up entire dataset PRIVATELY` Action. Neither deletion Action creates or requires a backup.
+- **Read-only inspection**, **private novel lists/conflict reports**, and **cover uploads from Novel_Library artifacts** have separate manual Actions.
+
+You need the GitHub Actions secret `HF_STORAGE_CONTROLLER_TOKEN` with sufficient Hugging Face permissions. No SHA, backup dataset or typed phrase is required for deletion. Both Actions automatically verify the target is a private dataset and check its state internally. **Deletion is permanent if you have no other copies.** The local `11_clear_hf_data.cmd` is a separate backup-first command and has not been changed.
+
+See [GitHub Actions setup and safety](docs/GITHUB_ACTIONS.md).
