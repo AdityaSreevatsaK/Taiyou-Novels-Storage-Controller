@@ -1,5 +1,7 @@
 import json
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -35,6 +37,49 @@ class CatalogueTests(unittest.TestCase):
         output = conflicts(data)
         self.assertEqual(len(output), 3)
         self.assertEqual(sum(x["type"] == "exact" for x in output), 1)
+
+
+    def test_new_private_dataset_can_be_previewed_for_initial_upload(self):
+        from taiyou_storage.core import load_remote
+        with patch("huggingface_hub.HfApi") as factory, \
+                patch("huggingface_hub.hf_hub_download") as download:
+            api = factory.return_value
+            api.dataset_info.return_value = SimpleNamespace(private=True, sha="a" * 40)
+            api.list_repo_files.return_value = [".gitattributes", "README.md"]
+            self.assertEqual(load_remote("owner/new-private", allow_empty=True),
+                             ([], "a" * 40))
+            download.assert_not_called()
+            with self.assertRaisesRegex(StorageError, "no data/library.json"):
+                load_remote("owner/new-private")
+            download.assert_not_called()
+
+    def test_orphaned_data_is_not_treated_as_empty(self):
+        from taiyou_storage.core import load_remote
+        with patch("huggingface_hub.HfApi") as factory, \
+                patch("huggingface_hub.hf_hub_download") as download:
+            api = factory.return_value
+            api.dataset_info.return_value = SimpleNamespace(private=True, sha="b" * 40)
+            api.list_repo_files.return_value = [
+                ".gitattributes", "data/novels/123456789012345678901234/original.zip"]
+            with self.assertRaisesRegex(StorageError, "Refusing automatic initialization"):
+                load_remote("owner/partial", allow_empty=True)
+            download.assert_not_called()
+
+    def test_public_empty_dataset_is_rejected(self):
+        from taiyou_storage.core import load_remote
+        with patch("huggingface_hub.HfApi") as factory:
+            factory.return_value.dataset_info.return_value = SimpleNamespace(
+                private=False, sha="a" * 40)
+            with self.assertRaisesRegex(StorageError, "not private"):
+                load_remote("owner/public", allow_empty=True)
+            factory.return_value.list_repo_files.assert_not_called()
+
+    def test_missing_or_inaccessible_repo_is_not_silently_initialised(self):
+        from taiyou_storage.core import load_remote
+        with patch("huggingface_hub.HfApi") as factory:
+            factory.return_value.dataset_info.side_effect = RuntimeError("Not found")
+            with self.assertRaisesRegex(RuntimeError, "Not found"):
+                load_remote("owner/missing", allow_empty=True)
 
     def test_csv_output(self):
         with TemporaryDirectory() as folder:

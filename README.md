@@ -98,3 +98,12 @@ You need the GitHub Actions secret `HF_STORAGE_CONTROLLER_TOKEN` with sufficient
 See [GitHub Actions setup and safety](docs/GITHUB_ACTIONS.md).
 
 The **full dataset-repository deletion Action has been permanently removed from the current codebase**. Only data clearing is offered. Old GitHub workflow runs may still appear in the Actions history, but they cannot be restarted to delete a repository using the current branch.
+
+### Fresh private dataset (first bulk upload)
+
+After recreating `AdityaSreevatsaK/Taiyous-Novels`, the dataset may not contain
+`data/library.json` yet. This is expected. Run `01_bulk_upload.cmd`: its
+read-only preview detects a new, empty **private** dataset and shows new novels.
+After your confirmation, the first upload creates the catalogue automatically.
+Do not create an empty `library.json` manually. Existing files under `data/`
+without a catalogue will block the operation for safety.

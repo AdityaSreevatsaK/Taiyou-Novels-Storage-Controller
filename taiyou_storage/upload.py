@@ -197,6 +197,12 @@ def apply_item(api, repo: str, token: str, item: dict) -> str:
             original = json.loads(Path(src).read_text(encoding="utf-8"))
             books = validate_catalogue(original)
         else:
+            if any(path.startswith("data/") for path in files):
+                raise UploadError(
+                    "Catalogue is missing but data/ already contains files. "
+                    "Refusing to initialise over orphaned data.")
+            # First-ever upload: create the v1 catalogue and novel files
+            # together in the same optimistic-concurrency-guarded commit.
             original = {"version": 1, "books": []}
             books = []
         entry, _ = matching_entry(books, item["metadata"], item["epub"])
@@ -270,8 +276,10 @@ def main(argv=None) -> int:
         from huggingface_hub import HfApi, hf_hub_download
         from .core import load_remote
         api = HfApi()
-        books, sha = load_remote(args.repo)
+        books, sha = load_remote(args.repo, allow_empty=True)
         files = set(api.list_repo_files(repo_id=args.repo, repo_type="dataset", revision=sha))
+        if "data/library.json" not in files:
+            print("[NEW PRIVATE DATASET] Initial library catalogue will be created on first upload.")
         hashes = {}
         for b in books:
             archive = b.get("archivePath")
