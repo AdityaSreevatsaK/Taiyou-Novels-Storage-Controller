@@ -1,0 +1,153 @@
+# Deliberately one-shot: only runs when THIS file is added/modified on master.
+# All target branches were manually audited against merged PRs on 2026-11-11.
+name: "Maintenance - prune verified stale branches"
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - ".github/workflows/prune-reviewed-branches.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: taiyou-storage-branch-prune
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    if: github.repository == 'AdityaSreevatsaK/Taiyou-Novels-Storage-Controller'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Revalidate merged PR heads and delete only approved branch refs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EXPECTED_MASTER: ${{ github.sha }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from urllib.error import HTTPError
+          from urllib.parse import quote, urlencode
+          from urllib.request import Request, urlopen
+
+          repo = os.environ["REPO"]
+          if repo != "AdityaSreevatsaK/Taiyou-Novels-Storage-Controller":
+              raise SystemExit("Unexpected repository: refusing branch deletion")
+          token = os.environ["GH_TOKEN"]
+          master_sha = os.environ["EXPECTED_MASTER"]
+          owner = repo.split("/", 1)[0]
+
+          # name -> (exact reviewed head SHA, merged pull request number).
+          approved = {
+              "feature/controller-foundation": ("9bb9738b30e1ac1c49b16c3e160d4e59408b0052", 1),
+              "feature/smart-incremental-upload": ("a6aa9c42a0dae6e8c0eb1feec1d4fcfbde0a63c1", 2),
+              "feature/cover-image-uploader": ("663c8ed6c9c70534119a130df989f2d457089844", 3),
+              "fix/cover-manifest-results": ("bad2ddfaad9809cee4785dac4d4c3b8e9fee395a", 4),
+              "feature/backup-first-dataset-reset": ("b166dc15e83a252bf905074fd84ff97d49a386c2", 5),
+              "feature/manual-hf-storage-actions": ("fcf4b3479552d26fbf69c8a1a1dbe254362db506", 6),
+              "fix/simplify-hf-delete-actions": ("261c13970d612e60076e029d3156d987049ff6f6", 7),
+              "hotfix/remove-dataset-repository-delete": ("948fde885da14aca1f32273b23cbb52dd991a3a4", 8),
+              "fix/first-upload-empty-hf-dataset": ("ffb8a04f40443ed988150316bae8f98e95f8f7b8", 9),
+              "fix/batch-cover-commits-rate-limit": ("5790494083badb5052411e2981c000c9930594d6", 10),
+              "fix/restore-source-genres": ("e928023f64dd38ae2656b82c9b53b19823e9cf91", 11),
+              "fix/storage-audit-integrity-20261111": ("0a5ba78cc11fc50a7fa98c06b734619d3a6644b8", 12),
+              "test/storage-end-to-end-smoke-20261111": ("9b1471585800e6a0108d9fa1d108b7e4e36b9df8", 13),
+              "docs/first-release-readme-refresh": ("0c786628f692ca559e3b9c91aee24cfec5a82d9c", 14),
+          }
+
+          def api(path, method="GET"):
+              req = Request(
+                  "https://api.github.com/" + path,
+                  method=method,
+                  headers={
+                      "Authorization": "Bearer " + token,
+                      "Accept": "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "taiyou-safe-branch-prune",
+                  },
+              )
+              with urlopen(req, timeout=40) as response:
+                  data = response.read()
+              return json.loads(data) if data else None
+
+          def branch_info(name):
+              try:
+                  return api(f"repos/{repo}/branches/{quote(name, safe='/')}")
+              except HTTPError as error:
+                  if error.code == 404:
+                      return None
+                  raise
+
+          def open_pulls(name):
+              query = urlencode({"state": "open", "head": f"{owner}:{name}", "per_page": 100})
+              return api(f"repos/{repo}/pulls?{query}")
+
+          master = branch_info("master")
+          if not master or master["commit"]["sha"] != master_sha:
+              raise SystemExit("Master has changed since workflow was triggered; refusing deletions")
+
+          # The temporary maintenance PR itself is eligible only after it has
+          # merged, and only if its HEAD still matches the merged PR snapshot.
+          self_branch = "maintenance/prune-reviewed-branches-20261111"
+          self_ref = branch_info(self_branch)
+          if self_ref is not None:
+              query = urlencode({"state": "closed", "head": f"{owner}:{self_branch}", "per_page": 100})
+              candidates = api(f"repos/{repo}/pulls?{query}")
+              merged = [p for p in candidates if p.get("merged_at") and
+                        p["head"]["ref"] == self_branch and
+                        p["head"]["sha"] == self_ref["commit"]["sha"] and
+                        p["base"]["ref"] == "master"]
+              if len(merged) == 1:
+                  approved[self_branch] = (self_ref["commit"]["sha"], merged[0]["number"])
+
+          # This completed probe contains NO net file changes; original probe
+          # content was removed in its final commit. Keep strict identity checks.
+          probe = "test/public-artifact-token-probe"
+          probe_sha = "65bc597a4d6f6056e3d115d1d431a3aa8a391143"
+          probe_tree = "3f9d4e5f0e006a10416fd99833ef908ad0d26209"
+          probe_commit = api(f"repos/{repo}/git/commits/{probe_sha}")
+          if (probe_commit["tree"]["sha"] == probe_tree and
+                  probe_commit["message"] == "chore: remove completed temporary public artifact access probe"):
+              approved[probe] = (probe_sha, None)
+
+          safe = []
+          for name, (expected_sha, pr_number) in approved.items():
+              if name == "master" or not (name.startswith(("feature/", "fix/", "hotfix/", "docs/", "test/", "maintenance/"))):
+                  raise SystemExit("Unsafe branch name in allowlist")
+              info = branch_info(name)
+              if not info:
+                  print(f"ALREADY ABSENT: {name}")
+                  continue
+              if info["commit"]["sha"] != expected_sha or info.get("protected"):
+                  print(f"PRESERVED: {name} (changed SHA or protected)")
+                  continue
+              if open_pulls(name):
+                  print(f"PRESERVED: {name} (open pull request)")
+                  continue
+              if pr_number is not None:
+                  pr = api(f"repos/{repo}/pulls/{pr_number}")
+                  if not (pr.get("merged_at") and pr["head"]["sha"] == expected_sha and
+                          pr["head"]["ref"] == name and pr["base"]["ref"] == "master"):
+                      print(f"PRESERVED: {name} (merged-PR evidence changed)")
+                      continue
+              safe.append((name, expected_sha))
+
+          print(f"Verified {len(safe)} branches safe for deletion.")
+          # Recheck the remote SHA immediately before each deletion; no force
+          # updates or deletions of unreviewed refs are allowed.
+          for name, expected_sha in safe:
+              current = branch_info(name)
+              if not current or current["commit"]["sha"] != expected_sha or current.get("protected"):
+                  print(f"PRESERVED: {name} (changed during cleanup)")
+                  continue
+              if open_pulls(name):
+                  print(f"PRESERVED: {name} (new open pull request)")
+                  continue
+              api(f"repos/{repo}/git/refs/heads/{quote(name, safe='/')}", method="DELETE")
+              print(f"DELETED: {name}")
+          PY
