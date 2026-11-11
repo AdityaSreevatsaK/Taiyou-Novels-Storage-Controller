@@ -99,6 +99,13 @@ class UploadTests(unittest.TestCase):
         self.assertEqual(updated["progress"], 33)
 
 
+    def test_restored_genres_survive_zip_without_source_tags(self):
+        ident = "a" * 24
+        old = existing(ident)["metadata"]
+        old["sourceTags"] = ["Cultivation", "Xianxia"]
+        updated = merged_metadata(old, {"title": "Example", "sourceTags": []}, ident)
+        self.assertEqual(updated["sourceTags"], ["Cultivation", "Xianxia"])
+
     def test_first_upload_initialises_catalogue_and_epub_atomically(self):
         from taiyou_storage.upload import apply_item
         with tempfile.TemporaryDirectory() as folder:
