@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 import zipfile
 
 from taiyou_storage.upload import read_novel, plan, merged_metadata, UploadError
@@ -89,6 +91,58 @@ class UploadTests(unittest.TestCase):
         self.assertEqual(updated["rating"], 5)
         self.assertEqual(updated["personalTags"], ["Favourite"])
         self.assertEqual(updated["progress"], 33)
+
+
+    def test_first_upload_initialises_catalogue_and_epub_atomically(self):
+        from taiyou_storage.upload import apply_item
+        with tempfile.TemporaryDirectory() as folder:
+            local = local_tuple(fixture(Path(folder)))
+            item = plan([], [local], {}, {".gitattributes"})[0]
+            self.assertEqual(item["state"], "NEW")
+            api = MagicMock()
+            api.dataset_info.return_value = SimpleNamespace(
+                private=True, sha="c" * 40)
+            api.list_repo_files.return_value = [".gitattributes", "README.md"]
+            with patch("huggingface_hub.hf_hub_download") as download:
+                self.assertEqual(apply_item(api, "owner/private", "token", item), "NEW")
+                download.assert_not_called()
+            api.create_commit.assert_called_once()
+            kwargs = api.create_commit.call_args.kwargs
+            self.assertEqual(kwargs["parent_commit"], "c" * 40)
+            by_path = {op.path_in_repo: op for op in kwargs["operations"]}
+            novel_id = item["id"]
+            self.assertIn(f"data/novels/{novel_id}/source.epub", by_path)
+            self.assertIn(f"data/novels/{novel_id}/original.zip", by_path)
+            catalogue = json.loads(by_path["data/library.json"].path_or_fileobj.getvalue())
+            self.assertEqual(catalogue["version"], 1)
+            self.assertEqual(len(catalogue["books"]), 1)
+            self.assertEqual(catalogue["books"][0]["id"], novel_id)
+
+    def test_missing_catalogue_with_remote_data_blocks_first_commit(self):
+        from taiyou_storage.upload import apply_item
+        with tempfile.TemporaryDirectory() as folder:
+            local = local_tuple(fixture(Path(folder)))
+            item = plan([], [local], {}, set())[0]
+            api = MagicMock()
+            api.dataset_info.return_value = SimpleNamespace(private=True, sha="c" * 40)
+            api.list_repo_files.return_value = [
+                "data/novels/aaaaaaaaaaaaaaaaaaaaaaaa/original.zip"]
+            with self.assertRaisesRegex(UploadError, "orphaned data"):
+                apply_item(api, "owner/private", "token", item)
+            api.create_commit.assert_not_called()
+
+    def test_main_preview_on_brand_new_empty_dataset_never_writes(self):
+        from taiyou_storage.upload import main
+        with tempfile.TemporaryDirectory() as folder:
+            fixture(Path(folder))
+            with patch("taiyou_storage.core.load_remote", return_value=([], "d" * 40)) as load, \
+                    patch("huggingface_hub.HfApi") as factory:
+                api = factory.return_value
+                api.list_repo_files.return_value = [".gitattributes", "README.md"]
+                self.assertEqual(main([folder]), 0)
+                load.assert_called_once_with(
+                    "AdityaSreevatsaK/Taiyous-Novels", allow_empty=True)
+                api.create_commit.assert_not_called()
 
     def test_invalid_archive_rejected(self):
         with tempfile.TemporaryDirectory() as d:

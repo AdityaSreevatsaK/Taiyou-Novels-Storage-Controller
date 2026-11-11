@@ -21,3 +21,14 @@ heuristic is conservative but not a guarantee against duplicates with different
 titles; inspect previews before applying.
 
 CI is completely offline. No Hugging Face dataset modifications occur during tests.
+
+## First upload to a newly recreated Hugging Face dataset
+
+You do not need to manually create `data/library.json`. A newly created **PRIVATE**
+dataset typically only contains `.gitattributes` and/or a README. Run
+`01_bulk_upload.cmd` and review the `NEW PRIVATE DATASET` preview; on
+confirmation the first novel upload creates the version 1 catalogue and novel
+files atomically. Subsequent ZIPs append to it. If the dataset has any
+`data/` files but no catalogue, the uploader refuses to initialise so it
+cannot overwrite or orphan data. The dataset must be private and accessible
+to your configured HF token.

@@ -95,7 +95,15 @@ def local_epub_id(path: Path) -> str:
         return hashlib.sha256(z.read(matching[0])).hexdigest()[:24]
 
 
-def load_remote(repo: str, token: str | None = None) -> tuple[list[dict], str]:
+def load_remote(repo: str, token: str | None = None, *,
+                allow_empty: bool = False) -> tuple[list[dict], str]:
+    """Read an existing catalogue, optionally allowing a brand-new empty dataset.
+
+    Only the novel uploader should set allow_empty=True. An absent catalogue
+    does NOT mean an empty library if unrelated files already exist in data/.
+    Missing repositories, private access failures and malformed catalogues
+    must never be silently treated as empty.
+    """
     from huggingface_hub import HfApi, hf_hub_download
     api = HfApi()
     info = api.dataset_info(repo, token=token)
@@ -103,6 +111,18 @@ def load_remote(repo: str, token: str | None = None) -> tuple[list[dict], str]:
         raise StorageError("Refusing to operate on a dataset that is not private")
     if not info.sha:
         raise StorageError("Could not determine dataset revision")
+    paths = set(api.list_repo_files(
+        repo_id=repo, repo_type="dataset", revision=info.sha, token=token))
+    if "data/library.json" not in paths:
+        if any(path.startswith("data/") for path in paths):
+            raise StorageError(
+                "Dataset contains data/ files but no data/library.json. "
+                "Refusing automatic initialization: inspect or restore the existing files.")
+        if not allow_empty:
+            raise StorageError(
+                "This private dataset has no data/library.json yet. "
+                "Run the bulk uploader to initialize it with the first novel.")
+        return [], info.sha
     file = hf_hub_download(repo_id=repo, repo_type="dataset", filename="data/library.json",
                            revision=info.sha, token=token)
     catalogue = json.loads(Path(file).read_text(encoding="utf-8"))
