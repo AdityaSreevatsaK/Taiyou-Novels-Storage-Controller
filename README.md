@@ -107,3 +107,29 @@ read-only preview detects a new, empty **private** dataset and shows new novels.
 After your confirmation, the first upload creates the catalogue automatically.
 Do not create an empty `library.json` manually. Existing files under `data/`
 without a catalogue will block the operation for safety.
+
+### Rate-limited, resumable cover upload
+
+The cover importer now writes multiple cover files plus their corresponding
+`data/library.json` updates in **one atomic HF commit** per batch (default:
+20 covers, capped at 48 MiB per batch). This replaces the old per-cover
+commit design that hit Hugging Face's hourly repository-commit quota.
+For example, 89 typical-sized covers use about five commits instead of 89.
+
+If a previous run stopped after 36 successful covers, **use the same ZIP**
+and simply run `10_upload_covers.cmd` again. The preview hashes remote
+covers, marks those 36 as `UNCHANGED`, and uploads only outstanding ones.
+No reset or redownload is needed.
+
+The uploader pauses for 2 seconds between commits by default, and honours
+a short `Retry-After` response once (30 seconds or less). On a long or
+unknown 429 commit quota, it stops cleanly rather than retrying for hours.
+If Hugging Face already reports the quota exceeded, you must allow its
+hourly quota to reset before retrying; batching cannot override a quota
+already exhausted.
+
+Optional CLI flags: `--batch-size 20` (1-40 covers) and
+`--commit-pause 2` (0-60 seconds). The `10_upload_covers.cmd`
+workflow still uses safe defaults and keeps the preview and YES confirmation.
+Normal Windows Hugging Face cache-symlink warnings are cosmetic and can
+be suppressed by the launcher without needing administrator permissions.

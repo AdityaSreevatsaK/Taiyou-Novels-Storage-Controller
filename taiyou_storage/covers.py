@@ -245,67 +245,16 @@ def save_report(items: list[dict], path: Path) -> None:
                      for item in items], REPORT_COLUMNS)
 
 
-def commit_cover(api, repo: str, token: str, item: dict) -> str:
-    """Recheck identity and digest, then atomically update cover plus catalogue."""
-    from huggingface_hub import CommitOperationAdd, hf_hub_download
-    for attempt in range(3):
-        info = api.dataset_info(repo, token=token)
-        if info.private is not True or not info.sha:
-            raise CoverError("Refusing to write to an unverified or non-private dataset")
-        sha = info.sha
-        catalogue_file = hf_hub_download(repo_id=repo, repo_type="dataset",
-                                         filename="data/library.json", revision=sha, token=token)
-        catalogue = json.loads(Path(catalogue_file).read_text(encoding="utf-8"))
-        books = validate_catalogue(catalogue)
-        book, _ = match_book(books, item["cover"])
-        if not book or book["id"] != item["book_id"]:
-            raise CoverError("Remote catalogue changed novel identity; retry from preview")
-        destination = item["destination"]
-        expected = f"data/novels/{book['id']}/cover{item['cover'].extension}"
-        if destination != expected:
-            raise CoverError("Unexpected cover destination")
-        current = book["metadata"].get("coverPath")
-        if current and (not isinstance(current, str) or
-                not current.startswith(f"data/novels/{book['id']}/cover.") or
-                PurePosixPath(current).suffix.lower() not in EXTENSIONS):
-            raise CoverError("Unexpected coverPath; refusing overwrite")
-        paths = set(api.list_repo_files(repo_id=repo, repo_type="dataset",
-                                       revision=sha, token=token))
-        same_image = False
-        if destination in paths:
-            source = hf_hub_download(repo_id=repo, filename=destination,
-                                     repo_type="dataset", revision=sha, token=token)
-            with Path(source).open("rb") as stream:
-                same_image = hashlib.sha256(stream.read()).hexdigest() == item["cover"].digest
-        if same_image and current == destination:
-            return "UNCHANGED"
-        book["metadata"]["coverPath"] = destination
-        operations = [CommitOperationAdd(
-            path_in_repo="data/library.json",
-            path_or_fileobj=io.BytesIO((json.dumps(catalogue, indent=2,
-                                                  ensure_ascii=False) + "\n").encode("utf-8")))]
-        if not same_image:
-            operations.insert(0, CommitOperationAdd(
-                path_in_repo=destination, path_or_fileobj=io.BytesIO(item["cover"].data)))
-        try:
-            api.create_commit(repo_id=repo, repo_type="dataset", token=token,
-                              operations=operations, parent_commit=sha,
-                              commit_message=f"Update novel cover: {book['metadata'].get('title', '')[:70]}")
-            return "LINKED" if same_image else ("UPDATED" if current else "UPLOADED")
-        except Exception as exc:
-            code = getattr(getattr(exc, "response", None), "status_code", None)
-            if code in (409, 412) and attempt < 2:
-                continue
-            raise
-    raise CoverError("Concurrent dataset changes prevented the upload")
-
-
 def run(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Import novel cover images into private HF dataset")
     parser.add_argument("archive", help="Downloaded_Covers.zip or the GitHub Actions artifact ZIP")
     parser.add_argument("--repo", default=os.environ.get("HF_DATASET_REPO", DEFAULT_REPO))
     parser.add_argument("--report", default="reports/cover-upload-plan.csv")
     parser.add_argument("--apply", action="store_true", help="Actually upload after preview")
+    parser.add_argument("--batch-size", type=int, default=20,
+                        help="Covers per HF commit (1-40; default 20)")
+    parser.add_argument("--commit-pause", type=float, default=2.0,
+                        help="Seconds between commit batches (default 2)")
     args = parser.parse_args(argv)
     try:
         covers = read_covers_zip(Path(args.archive))
@@ -353,15 +302,20 @@ def run(argv=None) -> int:
         backup.parent.mkdir(parents=True, exist_ok=True)
         backup.write_bytes(Path(remote_library).read_bytes())
         print("Catalogue backup:", backup)
-        for i, item in enumerate(changing, 1):
-            try:
-                print(f"[{i}/{len(changing)}] {item['title']}: " +
-                      commit_cover(api, args.repo, token, item))
-            except Exception:
-                print("STOPPED: earlier commits may have succeeded; review remote before retrying.",
-                      file=sys.stderr)
-                raise
-        print("Cover upload completed. The reader needs coverPath support to display images.")
+        # A batch commits its cover files AND all corresponding catalogue edits
+        # atomically. This avoids the Hub's hourly repository-commit quota.
+        from .cover_batches import upload_batches
+        try:
+            commits, applied = upload_batches(
+                api, args.repo, token, changing, revision,
+                batch_size=args.batch_size, commit_pause=args.commit_pause)
+        except Exception:
+            print("STOPPED: successfully committed batches are preserved. "
+                  "Rerun the SAME ZIP after resolving the error; already uploaded "
+                  "covers will show UNCHANGED.", file=sys.stderr)
+            raise
+        print(f"Cover upload completed: {applied} changed in {commits} HF commit(s).")
+        print("The reader needs coverPath support to display images.")
         return 0
     except (CoverError, OSError, ValueError, RuntimeError, zipfile.BadZipFile) as exc:
         print("ERROR:", exc, file=sys.stderr)
