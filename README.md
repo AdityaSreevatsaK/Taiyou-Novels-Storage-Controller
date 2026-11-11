@@ -67,6 +67,15 @@ Changed images are stored as data/novels/<existing-book-id>/cover.<jpg|png|webp>
 - Only jpeg, png and webp covers are supported. Images are checked for basic file signatures and size limits.
 - The controller does not download chapters or covers from source websites.
 
+### Upload size compatibility with the web reader
+
+The Storage Controller accepts novel ZIPs and embedded EPUBs up to **120 MiB**
+each. The separately deployed Personal Library web upload API currently enforces
+a different limit (**70 MiB per file / 75 MiB per request**). These are distinct
+upload routes: if the browser rejects a valid large novel, use the local
+Storage Controller rather than retrying the same oversized browser request.
+The web API's constraints are not changed by this repository.
+
 ## Development
 
     python -m unittest discover -s tests -v
