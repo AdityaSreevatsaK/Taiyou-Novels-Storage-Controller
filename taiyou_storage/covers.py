@@ -251,6 +251,8 @@ def run(argv=None) -> int:
     parser.add_argument("--repo", default=os.environ.get("HF_DATASET_REPO", DEFAULT_REPO))
     parser.add_argument("--report", default="reports/cover-upload-plan.csv")
     parser.add_argument("--apply", action="store_true", help="Actually upload after preview")
+    parser.add_argument("--interactive", action="store_true",
+                        help="Preview and approve within one revision-guarded process")
     parser.add_argument("--batch-size", type=int, default=20,
                         help="Covers per HF commit (1-40; default 20)")
     parser.add_argument("--commit-pause", type=float, default=2.0,
@@ -271,8 +273,11 @@ def run(argv=None) -> int:
         for destination in sorted(paths_to_hash):
             source = hf_hub_download(repo_id=args.repo, repo_type="dataset",
                                      filename=destination, revision=revision)
+            digest = hashlib.sha256()
             with Path(source).open("rb") as stream:
-                hashes[destination] = hashlib.sha256(stream.read()).hexdigest()
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            hashes[destination] = digest.hexdigest()
         items = make_plan(covers, books, hashes, remote_paths)
         save_report(items, Path(args.report))
         counts = {}
@@ -284,9 +289,15 @@ def run(argv=None) -> int:
         if any(item["status"] == "CONFLICT" for item in items):
             print("Conflicts found: NO images uploaded. Resolve first.", file=sys.stderr)
             return 2
-        if not args.apply:
-            print("Preview only. Use --apply for uploads.")
+        if not args.apply and not args.interactive:
+            print("Preview only. Use --apply or --interactive for uploads.")
             return 0
+        if args.interactive:
+            if not sys.stdin.isatty():
+                raise CoverError("Interactive approval requires a local console")
+            if input("Upload exactly these cover changes? Type YES: ").strip() != "YES":
+                print("Cancelled; no remote changes made.")
+                return 0
         token = get_token()
         if not token:
             raise CoverError("Please configure an HF token using hf auth login")
