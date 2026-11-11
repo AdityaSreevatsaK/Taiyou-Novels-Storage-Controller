@@ -144,6 +144,19 @@ class UploadTests(unittest.TestCase):
                 apply_item(api, "owner/private", "token", item)
             api.create_commit.assert_not_called()
 
+    def test_interactive_rejection_makes_no_cloud_write(self):
+        from taiyou_storage.upload import main
+        with tempfile.TemporaryDirectory() as folder:
+            fixture(Path(folder))
+            with patch("taiyou_storage.core.load_remote", return_value=([], "a" * 40)), \
+                    patch("huggingface_hub.HfApi") as api_type, \
+                    patch("taiyou_storage.upload.sys.stdin") as stdin, \
+                    patch("builtins.input", return_value="NO"):
+                stdin.isatty.return_value = True
+                api_type.return_value.list_repo_files.return_value = [".gitattributes"]
+                self.assertEqual(main([folder, "--interactive"]), 0)
+                api_type.return_value.create_commit.assert_not_called()
+
     def test_main_preview_on_brand_new_empty_dataset_never_writes(self):
         from taiyou_storage.upload import main
         with tempfile.TemporaryDirectory() as folder:
