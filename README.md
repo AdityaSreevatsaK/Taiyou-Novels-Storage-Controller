@@ -121,4 +121,4 @@ py -m unittest discover -s tests -v
 
 CI tests on **Windows and Linux, Python 3.11 and 3.12**. The verified integration suite covers idempotent uploads, corrupted EPUB repair, personal metadata, interrupted cover-batch resume and safe reset previews. **Live Hugging Face write integration is not part of CI.**
 
-Dependencies use tested versions in [`constraints.txt`](constraints.txt). See the [changelog](CHANGELOG.md) for releases. Code is MIT-licensed; novel texts and cover artwork are not.
+Dependencies use tested versions in [`constraints.txt`](constraints.txt). See the [changelog](CHANGELOG.md) and [release procedure](docs/RELEASING.md). Code is MIT-licensed; novel texts and cover artwork are not.
