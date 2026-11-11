@@ -1,148 +1,124 @@
 # Taiyou Novels Storage Controller
 
-Windows-friendly utilities for managing the private Hugging Face dataset **AdityaSreevatsaK/Taiyous-Novels**, used by Taiyou's Personal Library.
+Windows-friendly utilities for managing **Taiyou's Personal Library** files in the private Hugging Face dataset **`AdityaSreevatsaK/Taiyous-Novels`**. This controller imports prepared novel ZIPs, uploads covers, checks the library and creates backups; it does **not** download novels from websites or host the reader.
 
-## Getting started
+> **Privacy:** This code repository is public, but the Hugging Face dataset must stay **private**. Never commit personal notes, novel ZIPs, cover images, catalogue exports or access tokens to GitHub.
 
-Install Python 3.11+, then run:
+## Quick start (Windows)
 
-    py -m pip install -r requirements.txt
-    hf auth login
+1. Install **Python 3.11 or 3.12** and open a terminal in this repository.
+2. Install the tested dependencies and authenticate with Hugging Face:
 
-Use a Hugging Face token with permission to write to your **private** dataset if you plan to upload. Double-click 00_storage_menu.cmd, or run any individual CMD utility. You can override the default dataset by setting HF_DATASET_REPO.
+   ```powershell
+   py -m pip install -r requirements.txt
+   hf auth login
+   ```
 
-The utilities use the existing version 1 dataset catalogue (data/library.json). Local files in novels/, covers/, downloads/, backups/ and reports/ are ignored by Git. Do **not** commit tokens, archives, or copyrighted cover images to the public repository.
+3. Create a local `novels/` folder and put your prepared novel ZIP files inside.
+4. Run **`00_storage_menu.cmd`** or launch **`01_bulk_upload.cmd`** directly.
 
-## Utilities
+The upload launchers preview the actual changes and require you to type **YES** before committing. A bare Python CLI invocation is **read-only by default**; `--apply` explicitly writes without a prompt, while `--interactive` previews and asks for confirmation within the same process.
 
-| Command | Purpose |
+**Different private dataset?** Pass `--repo OWNER/PRIVATE-DATASET` to the Python CLI. The catalogue-management, cover and reset tools also support the `HF_DATASET_REPO` environment variable. **The novel uploader does not read that environment variable**: it requires `--repo` for an override. Confirm the target in your preview.
+
+## Available tools
+
+| Windows launcher | Purpose |
 |---|---|
-| 00_storage_menu.cmd | Choose a tool from a Windows menu |
-| 01_bulk_upload.cmd | Preview and confirm within one revision-guarded run; upload new/changed novel ZIPs |
-| 02_download_all.cmd | Download novel ZIP backups to downloads/ |
-| 03_list_novels.cmd | Export catalogue to reports/novels.csv |
-| 04_detect_conflicts.cmd | Detect exact/normalised duplicate titles |
-| 05_verify_integrity.cmd | Reserved for future full integrity verification |
-| 06_sync_status.cmd | Check local EPUB IDs against remote catalogue IDs |
-| 07_backup_catalogue.cmd | Save a dated copy of the catalogue |
-| 08_restore_novel.cmd | Reserved for future restore operation |
-| 09_delete_novel.cmd | Reserved for future safe deletion |
-| 10_upload_covers.cmd | Preview and confirm cover uploads within one revision-guarded run |
-| 11_clear_hf_data.cmd | Preview and optionally clear the private HF dataset after verified full backup |
+| **`01_bulk_upload.cmd`** | Preview, confirm and incrementally upload novel ZIPs |
+| `02_download_all.cmd` | Download existing original ZIPs to `downloads/` |
+| `03_list_novels.cmd` | Export a local CSV of catalogue entries |
+| `04_detect_conflicts.cmd` | Report exact/normalised duplicate titles |
+| `06_sync_status.cmd` | Compare local EPUB-derived IDs with remote IDs; **not** full byte verification |
+| `07_backup_catalogue.cmd` | Save a local copy of `data/library.json` |
+| **`10_upload_covers.cmd`** | Import covers with preview, confirmation and resumable batches |
+| **`11_clear_hf_data.cmd`** | **Destructive full reset** — verified backup and multiple confirmations required |
 
-### Cover image uploads
+`00_storage_menu.cmd` offers these working tools in a Windows menu. Launchers **05, 08 and 09 are placeholders**; full-integrity audit, single-novel restoration and single-novel deletion are not implemented here.
 
-Download **Downloaded_Covers.zip** or the GitHub Actions artifact ZIP from the Novel Retriever. It should contain a covers_manifest.json and a folder for each source website:
+## Import novel ZIPs
 
-    Downloaded_Covers.zip
-      NovelFull/martial-world-a1b2c3d4.jpg
-      FreeWebNovel/...
-      covers_manifest.json
+Each ZIP must contain exactly one valid **`source.epub`**. Optional `metadata.json`, `chapters.json` and chapter text files may sit alongside it or in a subfolder (such as `chapters/source.epub`).
 
-Each manifest record includes title, website, source_url and cover_file. One record, a list, or {"covers": [...]} is accepted. The uploader also accepts an outer GitHub Actions ZIP containing the inner Downloaded_Covers.zip.
+```text
+novels/
+  example-novel.zip
+    chapters/source.epub
+    chapters/metadata.json
+    chapters/chapters.json
+    chapters/001.txt
+```
 
-Launch 10_upload_covers.cmd and provide the ZIP path. Alternatively run:
+```powershell
+py -m taiyou_storage.upload novels                 # Preview only
+py -m taiyou_storage.upload novels --interactive   # Preview and confirm
+py -m taiyou_storage.upload novels --apply         # Explicit noninteractive upload
+```
 
-    py -m taiyou_storage.covers "C:\Downloads\Downloaded_Covers.zip"
-    py -m taiyou_storage.covers "C:\Downloads\Downloaded_Covers.zip" --interactive
-    py -m taiyou_storage.covers "C:\Downloads\Downloaded_Covers.zip" --apply
+An existing novel is matched by EPUB-derived ID or by an unambiguous normalised title **and** author. A successful match preserves the stable novel ID and app/user metadata, including progress, ratings, notes and personal tags. Missing genres in an older ZIP do not erase nonempty existing source genres.
 
-**Default is preview only.** The command matches exact source URL first, falling back to a unique title only when the catalogue has no conflicting source URL. Conflicts block the entire upload. Missing novels are reported and skipped; no book is created.
+A novel is labelled **UNCHANGED** only when its original ZIP, stored EPUB and source-managed catalogue metadata all agree. Changed binaries and the catalogue are reconciled in a single revision-guarded commit. The preview hashes only matching remote novels from your current local batch, not the whole library.
 
-Changed images are stored as data/novels/<existing-book-id>/cover.<jpg|png|webp> and the original book's metadata receives **coverPath**, preserving ID, EPUB, ZIP, progress, ratings and personal notes. An identical image with matching coverPath is skipped. Existing cover images of a *different extension* are not deleted automatically. Before the first write, a timestamped data/library.json backup is saved locally. A reports/cover-upload-plan.csv report is generated on every run.
+The first upload can initialise a brand-new **private** dataset. If a dataset already contains `data/` objects but lacks `data/library.json`, the uploader **refuses** to initialise over potentially orphaned data. Changes to both title and EPUB may be impossible to identify confidently; review any possible duplicates manually.
 
-**Reader integration:** covers are linked through metadata `coverPath`; whether images display depends on the Personal Library's current gateway, reader version and caching setup. Do not infer reader behavior from the Storage Controller alone.
+See [smart upload details](README.smart-upload.md) for compatibility and matching caveats.
 
-## Safety and current limitations
+## Import covers
 
-- CI is offline and never touches your private Hugging Face dataset.
-- The Windows novel/cover launchers preview and confirm in one process, rather than recomputing a different plan after the confirmation.
-- For scripts, `--interactive` requires a terminal confirmation; `--apply` explicitly authorises changes without prompting.
-- The novel uploader checks ZIP, EPUB and source-metadata equality before reporting `UNCHANGED`, and hashes only matching remote books.
-- Local ZIP/EPUB validation bounds entry count and expanded data before expensive CRC verification.
-- Existing novel IDs remain stable when an EPUB changes and the novel can be matched unambiguously.
-- Title + EPUB changes together may require manual ID mapping; inspect novel upload previews.
-- Archive validation and optimistic dataset revision checks reduce accidental overwrites but do not replace backups.
-- An upload can partially complete if a later individual commit fails. Re-run the preview to reconcile.
-- Only jpeg, png and webp covers are supported. Images are checked for basic file signatures and size limits.
-- The controller does not download chapters or covers from source websites.
+Use `10_upload_covers.cmd` with `Downloaded_Covers.zip`, `novel-cover-images.zip` or its outer GitHub Actions artifact ZIP. The archive must include `covers_manifest.json` and JPEG, PNG or WebP images. The uploader understands the Novel Retriever's `results` manifests and skips failed rows.
 
-### Upload size compatibility with the web reader
+```powershell
+py -m taiyou_storage.covers "C:\Downloads\Downloaded_Covers.zip"                 # Preview only
+py -m taiyou_storage.covers "C:\Downloads\Downloaded_Covers.zip" --interactive   # Preview and confirm
+```
 
-The Storage Controller accepts novel ZIPs and embedded EPUBs up to **120 MiB**
-each. The separately deployed Personal Library web upload API currently enforces
-a different limit (**70 MiB per file / 75 MiB per request**). These are distinct
-upload routes: if the browser rejects a valid large novel, use the local
-Storage Controller rather than retrying the same oversized browser request.
-The web API's constraints are not changed by this repository.
+Covers are linked only to **existing** novels. Matching prefers the source URL; ambiguous titles block updates. Images go under `data/novels/<book-id>/cover.<ext>`, with the catalogue's `metadata.coverPath` updated. The uploader does not delete covers of another extension, create books or alter EPUBs/ZIPs.
 
-## Development
+- Default: **20 covers per atomic batch** (configurable up to 40). The cover files and catalogue changes commit together.
+- If a later batch fails, earlier committed batches remain. **Re-run the same ZIP** to skip already completed covers and resume.
+- A local catalogue backup is saved before writes; preview reports go to `reports/`.
+- Short rate-limit delays are bounded; long/unknown Hugging Face 429 quotas stop rather than retrying indefinitely.
 
-    python -m unittest discover -s tests -v
+Cover display requires compatible `coverPath` handling and private image access in the separate reader app.
 
-Windows and Linux CI run on Python 3.11 and 3.12.
+## Backups, reset and safety
 
-## Licence
+The **full reset** removes **every file under `data/`** in your private dataset: novels, EPUBs, ZIPs, covers and any saved app data there. It is not intended for deleting a single novel or local download.
 
-MIT. Applies to the controller code, not the novel texts or cover artwork.
+```powershell
+py -m taiyou_storage.reset           # Read-only preview
+py -m taiyou_storage.reset --apply   # Interactive, verified-backup-first reset
+```
 
-### Cover manifest compatibility
+`11_clear_hf_data.cmd` provides the same backup-first workflow. The destructive path requires an interactive terminal, a complete SHA-256-verified local backup at a pinned dataset revision, and two explicit confirmations. It checks the dataset revision again before committing. **Keep the backup:** automatic restore is not implemented, and Git/LFS history may retain old files.
 
-The uploader accepts the actual Novel_Library `download_covers.py` summary manifest with `results` and `downloaded`/`skipped`/`failed` statuses. Failed rows are skipped because no image exists. You may supply `covers/novel-cover-images.zip`, or the `covers/` folder itself when it contains exactly one ZIP. The CMD launcher strips pasted surrounding double quotes before forwarding paths containing spaces.
+**No GitHub Action can clear or delete the dataset.** The old backup-free clear workflow and CLI command were retired.
 
-### Database reset (destructive)
+## GitHub Actions
 
-Run 11_clear_hf_data.cmd to preview the data/ files currently stored in your private HF dataset. Type YES to begin the backup-first reset; then enter the exact dataset repository ID. The controller downloads every data/ file at a pinned revision into a timestamped backups/before-reset-... directory and verifies SHA-256 checksums. It requires a second confirmation using a revision-bound phrase, checks that the dataset revision has not changed, and then commits the deletion of all data/ files while replacing data/library.json with a valid empty catalogue.
+Manual workflows include:
 
-This clears **all** novels, EPUBs, archives, covers, user reviews, progress and collections stored under data/. It does not selectively remove duplicates. Non-data/ files and the Hugging Face dataset repository itself remain in place. Historical Git/LFS data may remain; this is not a storage-history purge. **Automatic restore is not yet available**, so retain the full local backup and your novel ZIPs. Close other reader clients before resetting to avoid stale cache or resynchronisation.
+| Workflow | Operation |
+|---|---|
+| **HF - Inspect library (read only)** | Private catalogue health/counts; no writes |
+| **HF - Back up entire dataset PRIVATELY** | Verified snapshot to a separate **private** dataset |
+| **HF - Export novel names and conflicts PRIVATELY** | Private CSV reports to that backup dataset |
+| **HF - Upload covers from Novel_Library artifact** | Preview by default; opt-in cover import |
+| **HF - Restore novel genres from original download artifacts** | Separate, opt-in historical metadata repair |
 
-The command requires an interactive terminal. Normal execution is preview-only (`py -m taiyou_storage.reset`); explicit `--apply` and two manual confirmations are required for changes. CI tests never use dataset credentials or perform destructive operations; separate manually dispatched non-destructive Actions may use configured secrets.
+Refer to [Actions setup and security](docs/GITHUB_ACTIONS.md) for secrets and permissions, and [genre repair documentation](docs/GENRE_REPAIR.md) for that separate process. CI runs entirely offline and cannot write to the real novel dataset.
 
-## GitHub Actions (remote operations)
+## Limits and validation
 
-Open [Actions](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions) and select a workflow.
+- Novel ZIP and embedded EPUB: **120 MiB each**, with additional entry-count, expansion and compression-ratio limits.
+- Individual cover image: **12 MiB**; JPEG, PNG and WebP only.
+- Browser uploads through the separate Personal Library web app have their own limits; a valid Storage Controller ZIP may exceed them.
+- Some large imports need several commits. If an upload stops partway through, re-run the preview and review the remaining changes.
 
-- **Read-only inspection**, **private novel lists/conflict reports**, **private verified backups**, and **cover uploads from Novel_Library artifacts** are available as separate manual Actions.
-- The old **HF - CLEAR ALL data** Action was retired because it could erase the dataset without any verified backup.
-- Full data clearing is available **only** via local `11_clear_hf_data.cmd`, which requires a verified backup, revision checks and two interactive confirmations.
+```powershell
+py -m unittest discover -s tests -v
+```
 
-The manual non-destructive GitHub workflows use `HF_STORAGE_CONTROLLER_TOKEN` where needed. No backup-free data-clearing entry point remains in GitHub Actions. Historic workflow-run records may still appear in the GitHub interface.
+CI tests on **Windows and Linux, Python 3.11 and 3.12**. The verified integration suite covers idempotent uploads, corrupted EPUB repair, personal metadata, interrupted cover-batch resume and safe reset previews. **Live Hugging Face write integration is not part of CI.**
 
-See [GitHub Actions setup and safety](docs/GITHUB_ACTIONS.md).
-
-The **entire dataset-repository deletion Action** is also retired. Neither the repository itself nor its contents can be deleted through a GitHub Action in this controller.
-
-### Fresh private dataset (first bulk upload)
-
-After recreating `AdityaSreevatsaK/Taiyous-Novels`, the dataset may not contain
-`data/library.json` yet. This is expected. Run `01_bulk_upload.cmd`: its
-read-only preview detects a new, empty **private** dataset and shows new novels.
-After your confirmation, the first upload creates the catalogue automatically.
-Do not create an empty `library.json` manually. Existing files under `data/`
-without a catalogue will block the operation for safety.
-
-### Rate-limited, resumable cover upload
-
-The cover importer now writes multiple cover files plus their corresponding
-`data/library.json` updates in **one atomic HF commit** per batch (default:
-20 covers, capped at 48 MiB per batch). This replaces the old per-cover
-commit design that hit Hugging Face's hourly repository-commit quota.
-For example, 89 typical-sized covers use about five commits instead of 89.
-
-If a previous run stopped after 36 successful covers, **use the same ZIP**
-and simply run `10_upload_covers.cmd` again. The preview hashes remote
-covers, marks those 36 as `UNCHANGED`, and uploads only outstanding ones.
-No reset or redownload is needed.
-
-The uploader pauses for 2 seconds between commits by default, and honours
-a short `Retry-After` response once (30 seconds or less). On a long or
-unknown 429 commit quota, it stops cleanly rather than retrying for hours.
-If Hugging Face already reports the quota exceeded, you must allow its
-hourly quota to reset before retrying; batching cannot override a quota
-already exhausted.
-
-Optional CLI flags: `--batch-size 20` (1-40 covers) and
-`--commit-pause 2` (0-60 seconds). The `10_upload_covers.cmd`
-workflow still uses safe defaults and keeps the preview and YES confirmation.
-Normal Windows Hugging Face cache-symlink warnings are cosmetic and can
-be suppressed by the launcher without needing administrator permissions.
+Dependencies use tested versions in [`constraints.txt`](constraints.txt). See the [changelog](CHANGELOG.md) and [release procedure](docs/RELEASING.md). Code is MIT-licensed; novel texts and cover artwork are not.

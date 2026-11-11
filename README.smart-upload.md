@@ -1,15 +1,16 @@
-# Smart uploader: first release
+# Smart novel ZIP uploader — technical notes
 
-Run `01_bulk_upload.cmd` to preview and explicitly confirm changes. Or run
-`python -m taiyou_storage.upload novels` (read-only preview), `--interactive`
-for a same-process preview and confirmation, or explicit `--apply` for automation.
+For getting started and choosing a Windows launcher, see the [main README](README.md).
+The Python uploader defaults to read-only preview; use `--interactive` to
+preview and confirm in one process, or `--apply` for an explicitly authorised
+non-interactive write. Pass `--repo OWNER/PRIVATE-DATASET` to change target.
 
 The controller:
 - Validates ZIP CRC, EPUB structure, JSON, entry counts, expanded-size budgets and file-size limits.
 - Matches existing catalogue entries by exact EPUB hash-derived ID, or by unique normalised title **and** author.
 - Preserves an existing novel ID when EPUB content changes.
 - Reconciles `original.zip`, `source.epub` and `data/library.json` in one optimistic-concurrency-checked commit, uploading only binary artifacts whose contents differ.
-- Preserves existing personal metadata fields, including progress and ratings, where stored in book metadata.
+- Preserves existing personal metadata fields, including progress, ratings, personal tags and notes, where stored in book metadata. Missing source tags from older ZIPs do not erase existing nonempty source genres.
 - Skips only when ZIP, EPUB and source-managed metadata are all equivalent; refuses ambiguous matches and public target datasets.
 - Rechecks the remote catalogue immediately before each write; same-process Windows confirmation and revision-guarded multi-book application reject plan drift.
 - Downloads and hashes only the remote artifacts corresponding to the novels supplied in the current local batch.
