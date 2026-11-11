@@ -5,6 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 import zipfile
+from unittest.mock import patch
 
 from taiyou_storage.covers import Cover, CoverError, read_covers_zip, make_plan, match_book, source_key
 
@@ -40,6 +41,20 @@ def archive(path, records, extra=None, prefix="", nested=False):
 
 
 class CoverTests(unittest.TestCase):
+    def test_interactive_rejection_makes_no_cloud_write(self):
+        from taiyou_storage.covers import run
+        with patch("taiyou_storage.covers.read_covers_zip", return_value=[cover()]), \
+                patch("taiyou_storage.core.load_remote",
+                      return_value=([existing("a" * 24)], "b" * 40)), \
+                patch("huggingface_hub.HfApi") as api_type, \
+                patch("taiyou_storage.covers.save_report"), \
+                patch("taiyou_storage.covers.sys.stdin") as stdin, \
+                patch("builtins.input", return_value="NO"):
+            stdin.isatty.return_value = True
+            api_type.return_value.list_repo_files.return_value = ["data/library.json"]
+            self.assertEqual(run(["ignored.zip", "--interactive"]), 0)
+            api_type.return_value.create_commit.assert_not_called()
+
     def test_simple_manifest_object(self):
         with TemporaryDirectory() as d:
             target = Path(d) / "covers.zip"

@@ -1,8 +1,8 @@
 """Manual, privacy-preserving GitHub Actions for a private HF novel dataset.
 
 Never upload private novel files or reports as GitHub Actions artifacts.
-Destructive operations require one confirmation checkbox. Remote backups
-remain an optional, separate workflow.
+Destructive data clearing is deliberately unavailable from Actions.
+Verified backup-first resets remain local and interactive.
 """
 from __future__ import annotations
 
@@ -21,7 +21,6 @@ import sys
 import tempfile
 
 from .core import DEFAULT_REPO, normalized_title, validate_catalogue
-from .reset import operations_for, select_data_files
 
 
 class ActionError(ValueError):
@@ -38,12 +37,6 @@ def validate_repo(value: str) -> str:
         raise ActionError("Backup must belong to the same Hugging Face account")
     return value
 
-
-def verify_gate(action: str, confirmed: bool) -> None:
-    if action != "clear":
-        raise ActionError("Only the data-clearing operation is supported")
-    if confirmed is not True:
-        raise ActionError("Data clearing requires the confirmation checkbox")
 
 def private_dataset(api, repo: str, token: str) -> str:
     info = api.dataset_info(repo, token=token)
@@ -237,24 +230,6 @@ def report_to_private_backup(api, backup_repo: str, token: str) -> None:
     print("Open the backup dataset to view names and details; none are posted in public artifacts.")
 
 
-def clear_data(api, token: str, confirmed: bool) -> None:
-    """Clear private dataset files only. The dataset repository is never deleted."""
-    verify_gate("clear", confirmed)
-    revision, paths = inventory(api, token)
-    targets = select_data_files(paths)
-    if not targets:
-        raise ActionError("No data/ files to clear")
-    latest_revision, latest_paths = inventory(api, token)
-    if latest_revision != revision or latest_paths != paths:
-        raise ActionError("Dataset changed during pre-delete checks; no deletion performed")
-    api.create_commit(
-        repo_id=DEFAULT_REPO, repo_type="dataset", token=token,
-        parent_commit=revision,
-        operations=operations_for(targets),
-        commit_message="Clear all private library data (owner confirmed)")
-    print("SUCCESS: data/ files cleared; empty library catalogue remains.")
-
-
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Private HF storage GitHub Actions")
     commands = parser.add_subparsers(dest="action", required=True)
@@ -262,8 +237,6 @@ def main(argv=None) -> int:
     for action in ("report", "backup"):
         p = commands.add_parser(action)
         p.add_argument("--backup-repo", required=True)
-    p = commands.add_parser("clear")
-    p.add_argument("--yes", action="store_true", help="Explicit confirmation")
     args = parser.parse_args(argv)
     token = os.environ.get("HF_TOKEN", "").strip()
     if not token:
@@ -281,8 +254,6 @@ def main(argv=None) -> int:
         elif args.action == "backup":
             revision, paths = inventory(api, token)
             copy_to_private_backup(api, args.backup_repo, token, revision, paths)
-        elif args.action == "clear":
-            clear_data(api, token, args.yes)
         return 0
     except ActionError as exc:
         print("ERROR:", exc, file=sys.stderr)

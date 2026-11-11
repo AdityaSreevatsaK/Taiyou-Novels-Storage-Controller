@@ -17,13 +17,8 @@ rem Users may paste a path with surrounding quotation marks. Strip them before r
 set "archive=%archive:"=%"
 if not defined archive (echo No archive selected. & pause & exit /b 1)
 echo.
-echo Step 1: Preview only
-py -m taiyou_storage.covers "%archive%"
-if errorlevel 1 (echo Upload cancelled due to errors. & pause & exit /b 1)
-echo.
-set /p "confirm=Upload changed covers to your PRIVATE HF dataset? Type YES: "
-if /I not "%confirm%"=="YES" (echo Cancelled. & pause & exit /b 0)
-py -m taiyou_storage.covers "%archive%" --apply
+echo Preview and confirm cover changes in one revision-guarded run
+py -m taiyou_storage.covers "%archive%" --interactive
 set "result=%errorlevel%"
 pause
 exit /b %result%

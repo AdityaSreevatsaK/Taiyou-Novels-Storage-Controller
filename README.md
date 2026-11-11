@@ -18,7 +18,7 @@ The utilities use the existing version 1 dataset catalogue (data/library.json). 
 | Command | Purpose |
 |---|---|
 | 00_storage_menu.cmd | Choose a tool from a Windows menu |
-| 01_bulk_upload.cmd | Preview changes and upload new/modified novel ZIPs after confirmation |
+| 01_bulk_upload.cmd | Preview and confirm within one revision-guarded run; upload new/changed novel ZIPs |
 | 02_download_all.cmd | Download novel ZIP backups to downloads/ |
 | 03_list_novels.cmd | Export catalogue to reports/novels.csv |
 | 04_detect_conflicts.cmd | Detect exact/normalised duplicate titles |
@@ -27,7 +27,7 @@ The utilities use the existing version 1 dataset catalogue (data/library.json). 
 | 07_backup_catalogue.cmd | Save a dated copy of the catalogue |
 | 08_restore_novel.cmd | Reserved for future restore operation |
 | 09_delete_novel.cmd | Reserved for future safe deletion |
-| 10_upload_covers.cmd | Import cover images from Downloaded_Covers.zip, with preview and conflict checks |
+| 10_upload_covers.cmd | Preview and confirm cover uploads within one revision-guarded run |
 | 11_clear_hf_data.cmd | Preview and optionally clear the private HF dataset after verified full backup |
 
 ### Cover image uploads
@@ -44,24 +44,37 @@ Each manifest record includes title, website, source_url and cover_file. One rec
 Launch 10_upload_covers.cmd and provide the ZIP path. Alternatively run:
 
     py -m taiyou_storage.covers "C:\Downloads\Downloaded_Covers.zip"
+    py -m taiyou_storage.covers "C:\Downloads\Downloaded_Covers.zip" --interactive
     py -m taiyou_storage.covers "C:\Downloads\Downloaded_Covers.zip" --apply
 
 **Default is preview only.** The command matches exact source URL first, falling back to a unique title only when the catalogue has no conflicting source URL. Conflicts block the entire upload. Missing novels are reported and skipped; no book is created.
 
 Changed images are stored as data/novels/<existing-book-id>/cover.<jpg|png|webp> and the original book's metadata receives **coverPath**, preserving ID, EPUB, ZIP, progress, ratings and personal notes. An identical image with matching coverPath is skipped. Existing cover images of a *different extension* are not deleted automatically. Before the first write, a timestamped data/library.json backup is saved locally. A reports/cover-upload-plan.csv report is generated on every run.
 
-**Reader integration is separate:** the current Taiyou's Personal Library uses generated text covers and its Cloudflare gateway does not yet allow image paths. The reader must be updated to consume coverPath and securely serve/cache the private image before actual covers will appear.
+**Reader integration:** covers are linked through metadata `coverPath`; whether images display depends on the Personal Library's current gateway, reader version and caching setup. Do not infer reader behavior from the Storage Controller alone.
 
 ## Safety and current limitations
 
 - CI is offline and never touches your private Hugging Face dataset.
-- Novel and cover uploaders require explicit confirmation or --apply.
+- The Windows novel/cover launchers preview and confirm in one process, rather than recomputing a different plan after the confirmation.
+- For scripts, `--interactive` requires a terminal confirmation; `--apply` explicitly authorises changes without prompting.
+- The novel uploader checks ZIP, EPUB and source-metadata equality before reporting `UNCHANGED`, and hashes only matching remote books.
+- Local ZIP/EPUB validation bounds entry count and expanded data before expensive CRC verification.
 - Existing novel IDs remain stable when an EPUB changes and the novel can be matched unambiguously.
 - Title + EPUB changes together may require manual ID mapping; inspect novel upload previews.
 - Archive validation and optimistic dataset revision checks reduce accidental overwrites but do not replace backups.
 - An upload can partially complete if a later individual commit fails. Re-run the preview to reconcile.
 - Only jpeg, png and webp covers are supported. Images are checked for basic file signatures and size limits.
 - The controller does not download chapters or covers from source websites.
+
+### Upload size compatibility with the web reader
+
+The Storage Controller accepts novel ZIPs and embedded EPUBs up to **120 MiB**
+each. The separately deployed Personal Library web upload API currently enforces
+a different limit (**70 MiB per file / 75 MiB per request**). These are distinct
+upload routes: if the browser rejects a valid large novel, use the local
+Storage Controller rather than retrying the same oversized browser request.
+The web API's constraints are not changed by this repository.
 
 ## Development
 
@@ -83,21 +96,21 @@ Run 11_clear_hf_data.cmd to preview the data/ files currently stored in your pri
 
 This clears **all** novels, EPUBs, archives, covers, user reviews, progress and collections stored under data/. It does not selectively remove duplicates. Non-data/ files and the Hugging Face dataset repository itself remain in place. Historical Git/LFS data may remain; this is not a storage-history purge. **Automatic restore is not yet available**, so retain the full local backup and your novel ZIPs. Close other reader clients before resetting to avoid stale cache or resynchronisation.
 
-The command requires an interactive terminal. Normal execution is preview-only (py -m taiyou_storage.reset); explicit --apply and two manual confirmations are required for changes. CI does not have credentials or execute destructive operations.
+The command requires an interactive terminal. Normal execution is preview-only (`py -m taiyou_storage.reset`); explicit `--apply` and two manual confirmations are required for changes. CI tests never use dataset credentials or perform destructive operations; separate manually dispatched non-destructive Actions may use configured secrets.
 
 ## GitHub Actions (remote operations)
 
 Open [Actions](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions) and select a workflow.
 
-- **HF - CLEAR ALL data**: manually run, tick its single confirmation checkbox, then click Run workflow. Deletes all `data/` contents (including novels, covers and personal notes) and recreates an empty catalogue. **Keeps** the private HF dataset repository.
-- **Optional backups** are available via the separate `HF - Back up entire dataset PRIVATELY` Action. The clear-data Action does not create or require a backup.
-- **Read-only inspection**, **private novel lists/conflict reports**, and **cover uploads from Novel_Library artifacts** have separate manual Actions.
+- **Read-only inspection**, **private novel lists/conflict reports**, **private verified backups**, and **cover uploads from Novel_Library artifacts** are available as separate manual Actions.
+- The old **HF - CLEAR ALL data** Action was retired because it could erase the dataset without any verified backup.
+- Full data clearing is available **only** via local `11_clear_hf_data.cmd`, which requires a verified backup, revision checks and two interactive confirmations.
 
-You need the GitHub Actions secret `HF_STORAGE_CONTROLLER_TOKEN` with sufficient Hugging Face permissions. No SHA, backup dataset or typed phrase is required for clearing data. The Action verifies that the dataset is private and checks its state internally. **Deleted contents may be unrecoverable if you have no other copies.** The local `11_clear_hf_data.cmd` is a separate backup-first command and has not been changed.
+The manual non-destructive GitHub workflows use `HF_STORAGE_CONTROLLER_TOKEN` where needed. No backup-free data-clearing entry point remains in GitHub Actions. Historic workflow-run records may still appear in the GitHub interface.
 
 See [GitHub Actions setup and safety](docs/GITHUB_ACTIONS.md).
 
-The **full dataset-repository deletion Action has been permanently removed from the current codebase**. Only data clearing is offered. Old GitHub workflow runs may still appear in the Actions history, but they cannot be restarted to delete a repository using the current branch.
+The **entire dataset-repository deletion Action** is also retired. Neither the repository itself nor its contents can be deleted through a GitHub Action in this controller.
 
 ### Fresh private dataset (first bulk upload)
 

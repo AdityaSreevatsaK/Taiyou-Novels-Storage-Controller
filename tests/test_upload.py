@@ -8,7 +8,10 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 import zipfile
 
-from taiyou_storage.upload import read_novel, plan, merged_metadata, UploadError
+from taiyou_storage.upload import (
+    read_novel, plan, merged_metadata, validate_zip_budget, UploadError,
+    MAX_ZIP_ENTRIES, MAX_ZIP_EXPANDED,
+)
 
 
 def fixture(folder, name="example.zip", title="Example", author="Author", synopsis="First", chapter="text"):
@@ -67,8 +70,11 @@ class UploadTests(unittest.TestCase):
             local = local_tuple(fixture(Path(d)))
             ident = hashlib.sha256(local[2]).hexdigest()[:24]
             old = existing(ident)
-            output = plan([old], [local], {old["archivePath"]: local[3]},
-                          {old["archivePath"], old["epubPath"]})
+            old["metadata"] = merged_metadata(old["metadata"], local[1], ident)
+            output = plan([old], [local], {
+                old["archivePath"]: local[3],
+                old["epubPath"]: hashlib.sha256(local[2]).hexdigest(),
+            }, {old["archivePath"], old["epubPath"]})
             self.assertEqual(output[0]["state"], "UNCHANGED")
 
     def test_conflicting_same_title_different_author(self):
@@ -92,6 +98,13 @@ class UploadTests(unittest.TestCase):
         self.assertEqual(updated["personalTags"], ["Favourite"])
         self.assertEqual(updated["progress"], 33)
 
+
+    def test_restored_genres_survive_zip_without_source_tags(self):
+        ident = "a" * 24
+        old = existing(ident)["metadata"]
+        old["sourceTags"] = ["Cultivation", "Xianxia"]
+        updated = merged_metadata(old, {"title": "Example", "sourceTags": []}, ident)
+        self.assertEqual(updated["sourceTags"], ["Cultivation", "Xianxia"])
 
     def test_first_upload_initialises_catalogue_and_epub_atomically(self):
         from taiyou_storage.upload import apply_item
@@ -131,6 +144,19 @@ class UploadTests(unittest.TestCase):
                 apply_item(api, "owner/private", "token", item)
             api.create_commit.assert_not_called()
 
+    def test_interactive_rejection_makes_no_cloud_write(self):
+        from taiyou_storage.upload import main
+        with tempfile.TemporaryDirectory() as folder:
+            fixture(Path(folder))
+            with patch("taiyou_storage.core.load_remote", return_value=([], "a" * 40)), \
+                    patch("huggingface_hub.HfApi") as api_type, \
+                    patch("taiyou_storage.upload.sys.stdin") as stdin, \
+                    patch("builtins.input", return_value="NO"):
+                stdin.isatty.return_value = True
+                api_type.return_value.list_repo_files.return_value = [".gitattributes"]
+                self.assertEqual(main([folder, "--interactive"]), 0)
+                api_type.return_value.create_commit.assert_not_called()
+
     def test_main_preview_on_brand_new_empty_dataset_never_writes(self):
         from taiyou_storage.upload import main
         with tempfile.TemporaryDirectory() as folder:
@@ -143,6 +169,126 @@ class UploadTests(unittest.TestCase):
                 load.assert_called_once_with(
                     "AdityaSreevatsaK/Taiyous-Novels", allow_empty=True)
                 api.create_commit.assert_not_called()
+
+
+    def test_matching_archive_does_not_hide_corrupt_epub(self):
+        with tempfile.TemporaryDirectory() as d:
+            local = local_tuple(fixture(Path(d)))
+            ident = hashlib.sha256(local[2]).hexdigest()[:24]
+            old = existing(ident)
+            old["metadata"] = merged_metadata(old["metadata"], local[1], ident)
+            result = plan([old], [local], {
+                old["archivePath"]: local[3],
+                old["epubPath"]: hashlib.sha256(b"corrupted").hexdigest(),
+            }, {old["archivePath"], old["epubPath"]})
+            self.assertEqual(result[0]["state"], "UPDATE")
+
+    def test_matching_artifacts_do_not_hide_catalogue_metadata_drift(self):
+        with tempfile.TemporaryDirectory() as d:
+            local = local_tuple(fixture(Path(d)))
+            ident = hashlib.sha256(local[2]).hexdigest()[:24]
+            old = existing(ident)
+            old["metadata"] = merged_metadata(old["metadata"], local[1], ident)
+            old["metadata"]["description"] = "stale"
+            result = plan([old], [local], {
+                old["archivePath"]: local[3],
+                old["epubPath"]: hashlib.sha256(local[2]).hexdigest(),
+            }, {old["archivePath"], old["epubPath"]})
+            self.assertEqual(result[0]["state"], "UPDATE")
+
+    def test_metadata_only_repair_uploads_catalogue_not_binary_artifacts(self):
+        from taiyou_storage.upload import apply_item
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            local = local_tuple(fixture(root))
+            ident = hashlib.sha256(local[2]).hexdigest()[:24]
+            old = existing(ident)
+            old["metadata"] = merged_metadata(old["metadata"], local[1], ident)
+            old["metadata"]["description"] = "old"
+            cat = root / "library.json"
+            cat.write_text(json.dumps({"version": 1, "books": [old]}), encoding="utf-8")
+            remote_epub = root / "remote.epub"
+            remote_epub.write_bytes(local[2])
+            item = plan([old], [local], {}, set())[0]
+            api = MagicMock()
+            api.dataset_info.return_value = SimpleNamespace(private=True, sha="a" * 40)
+            api.list_repo_files.return_value = [
+                "data/library.json", old["archivePath"], old["epubPath"]]
+            def download(*args, **kwargs):
+                name = kwargs["filename"]
+                return str(cat if name == "data/library.json" else
+                           local[0] if name == old["archivePath"] else remote_epub)
+            with patch("huggingface_hub.hf_hub_download", side_effect=download):
+                self.assertEqual(apply_item(api, "owner/private", "token", item), "UPDATED")
+            ops = [x.path_in_repo for x in api.create_commit.call_args.kwargs["operations"]]
+            self.assertEqual(ops, ["data/library.json"])
+
+    def test_corrupt_remote_epub_is_reuploaded(self):
+        from taiyou_storage.upload import apply_item
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            local = local_tuple(fixture(root))
+            ident = hashlib.sha256(local[2]).hexdigest()[:24]
+            old = existing(ident)
+            old["metadata"] = merged_metadata(old["metadata"], local[1], ident)
+            cat = root / "library.json"
+            cat.write_text(json.dumps({"version": 1, "books": [old]}), encoding="utf-8")
+            remote_epub = root / "remote.epub"
+            remote_epub.write_bytes(b"stale")
+            item = plan([old], [local], {}, set())[0]
+            api = MagicMock()
+            api.dataset_info.return_value = SimpleNamespace(private=True, sha="a" * 40)
+            api.list_repo_files.return_value = [
+                "data/library.json", old["archivePath"], old["epubPath"]]
+            def download(*args, **kwargs):
+                name = kwargs["filename"]
+                return str(cat if name == "data/library.json" else
+                           local[0] if name == old["archivePath"] else remote_epub)
+            with patch("huggingface_hub.hf_hub_download", side_effect=download):
+                self.assertEqual(apply_item(api, "owner/private", "token", item), "UPDATED")
+            ops = [x.path_in_repo for x in api.create_commit.call_args.kwargs["operations"]]
+            self.assertIn(old["epubPath"], ops)
+            self.assertNotIn(old["archivePath"], ops)
+
+    def test_zip_entry_budget_checked_before_decompression(self):
+        info = SimpleNamespace(filename="chapter.txt", flag_bits=0,
+                               file_size=1, compress_size=1, is_dir=lambda: False)
+        z = SimpleNamespace(infolist=lambda: [info] * (MAX_ZIP_ENTRIES + 1))
+        with self.assertRaisesRegex(UploadError, "Too many"):
+            validate_zip_budget(z)
+
+    def test_zip_expansion_budget_checked_before_decompression(self):
+        info = SimpleNamespace(filename="chapter.txt", flag_bits=0,
+                               file_size=MAX_ZIP_EXPANDED + 1,
+                               compress_size=MAX_ZIP_EXPANDED + 1,
+                               is_dir=lambda: False)
+        with self.assertRaisesRegex(UploadError, "expanded data"):
+            validate_zip_budget(SimpleNamespace(infolist=lambda: [info]))
+
+    def test_preview_revision_drift_refuses_to_commit(self):
+        from taiyou_storage.upload import apply_item
+        with tempfile.TemporaryDirectory() as d:
+            local = local_tuple(fixture(Path(d)))
+            item = plan([], [local], {}, set())[0]
+            api = MagicMock()
+            api.dataset_info.return_value = SimpleNamespace(private=True, sha="b" * 40)
+            with self.assertRaisesRegex(UploadError, "changed since preview"):
+                apply_item(api, "owner/private", "token", item,
+                           expected_revision="a" * 40, return_revision=True)
+            api.create_commit.assert_not_called()
+
+    def test_changed_local_zip_refuses_commit(self):
+        from taiyou_storage.upload import apply_item
+        with tempfile.TemporaryDirectory() as d:
+            local = local_tuple(fixture(Path(d)))
+            item = plan([], [local], {}, set())[0]
+            item["path"].write_bytes(b"changed")
+            api = MagicMock()
+            api.dataset_info.return_value = SimpleNamespace(private=True, sha="a" * 40)
+            api.list_repo_files.return_value = []
+            with self.assertRaisesRegex(UploadError, "Local ZIP changed"):
+                apply_item(api, "owner/private", "token", item)
+            api.create_commit.assert_not_called()
 
     def test_invalid_archive_rejected(self):
         with tempfile.TemporaryDirectory() as d:

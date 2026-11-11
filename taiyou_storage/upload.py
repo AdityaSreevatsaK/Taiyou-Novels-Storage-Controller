@@ -17,15 +17,44 @@ import unicodedata
 import xml.etree.ElementTree as ET
 import zipfile
 
-from .core import DEFAULT_REPO, normalized_title, validate_catalogue
+from .core import DEFAULT_REPO, normalized_title, sha256_file, validate_catalogue
 
 MAX_ZIP = 120 * 1024 * 1024
 MAX_EPUB = 120 * 1024 * 1024
 MAX_JSON = 12 * 1024 * 1024
+MAX_ZIP_ENTRIES = 30000
+MAX_ZIP_EXPANDED = 2 * 1024 * 1024 * 1024
+MAX_EPUB_ENTRIES = 20000
+MAX_EPUB_EXPANDED = 512 * 1024 * 1024
+MAX_ENTRY_COMPRESSION_RATIO = 10000
 
 
 class UploadError(ValueError):
     pass
+
+
+def validate_zip_budget(z: zipfile.ZipFile, *, epub: bool = False) -> None:
+    """Reject pathological archives before any member is decompressed."""
+    max_entries = MAX_EPUB_ENTRIES if epub else MAX_ZIP_ENTRIES
+    max_bytes = MAX_EPUB_EXPANDED if epub else MAX_ZIP_EXPANDED
+    members = z.infolist()
+    if len(members) > max_entries:
+        raise UploadError("Too many ZIP/EPUB entries")
+    total = 0
+    for member in members:
+        name = member.filename.replace("\\", "/")
+        if (name.startswith("/") or any(part == ".." for part in name.split("/"))
+                or member.flag_bits & 1):
+            raise UploadError("Unsafe or encrypted ZIP/EPUB member")
+        if member.is_dir():
+            continue
+        if member.file_size < 0 or member.compress_size < 0:
+            raise UploadError("Invalid ZIP/EPUB member size")
+        total += member.file_size
+        if total > max_bytes:
+            raise UploadError("ZIP/EPUB expanded data exceeds safety budget")
+        if member.file_size > max(1, member.compress_size) * MAX_ENTRY_COMPRESSION_RATIO:
+            raise UploadError("Suspicious ZIP/EPUB compression ratio")
 
 
 def _entry(z: zipfile.ZipFile, name: str):
@@ -39,8 +68,11 @@ def _entry(z: zipfile.ZipFile, name: str):
 def _opf_metadata(epub: bytes) -> dict:
     try:
         with zipfile.ZipFile(io.BytesIO(epub)) as z:
+            validate_zip_budget(z, epub=True)
             if "mimetype" not in z.namelist() or "META-INF/container.xml" not in z.namelist():
                 raise UploadError("Missing EPUB mimetype or container.xml")
+            if z.getinfo("META-INF/container.xml").file_size > 1024 * 1024:
+                raise UploadError("EPUB container metadata too large")
             root = ET.fromstring(z.read("META-INF/container.xml"))
             rootfile = next((e for e in root.iter() if e.tag.rsplit("}", 1)[-1] == "rootfile"), None)
             opf = rootfile.get("full-path") if rootfile is not None else None
@@ -64,6 +96,7 @@ def read_novel(path: Path) -> tuple[dict, bytes, str]:
         raise UploadError("ZIP exceeds 120MB")
     try:
         with zipfile.ZipFile(path) as z:
+            validate_zip_budget(z)
             info = _entry(z, "source.epub")
             if info is None or info.file_size > MAX_EPUB or info.file_size == 0:
                 raise UploadError("Expected exactly one nonempty source.epub (max 120MB)")
@@ -117,7 +150,7 @@ def read_novel(path: Path) -> tuple[dict, bytes, str]:
     if not isinstance(book["chapterCount"], int) or book["chapterCount"] <= 0:
         book.pop("chapterCount", None)
     book = {k: v for k, v in book.items() if v is not None}
-    return book, epub, hashlib.sha256(path.read_bytes()).hexdigest()
+    return book, epub, sha256_file(path)
 
 
 def matching_entry(books: list[dict], meta: dict, epub: bytes) -> tuple[dict | None, str]:
@@ -139,7 +172,7 @@ def matching_entry(books: list[dict], meta: dict, epub: bytes) -> tuple[dict | N
 
 def plan(books: list[dict], local: list[tuple[Path, dict, bytes, str]],
          remote_hashes: dict[str, str], remote_paths: set[str]) -> list[dict]:
-    """Build a conservative plan; remote_hashes maps archive path to SHA256."""
+    """Build a conservative plan; remote_hashes maps archive and EPUB paths to SHA256."""
     output = []
     assigned = {}
     for path, meta, epub, digest in local:
@@ -154,7 +187,10 @@ def plan(books: list[dict], local: list[tuple[Path, dict, bytes, str]],
             if entry:
                 if entry["epubPath"] != epub_path or (entry.get("archivePath") not in (None, archive)):
                     raise UploadError("CONFLICT: existing catalogue paths unexpected")
-                if remote_hashes.get(archive) == digest and epub_path in remote_paths:
+                merged = merged_metadata(entry["metadata"], meta, chosen_id)
+                if (remote_hashes.get(archive) == digest and
+                        remote_hashes.get(epub_path) == hashlib.sha256(epub).hexdigest() and
+                        entry["metadata"] == merged and entry.get("archivePath") == archive):
                     state = "UNCHANGED"
                 else:
                     state = "UPDATE"
@@ -174,6 +210,10 @@ def merged_metadata(old: dict | None, new: dict, chosen_id: str) -> dict:
     # Preserve all existing app/user-managed fields unless they are source-managed.
     result = dict(old or {})
     result.update(new)
+    # Older ZIPs may omit source genres that were safely backfilled later.
+    # Missing/empty incoming tags must not erase already verified genres.
+    if old and old.get("sourceTags") and not new.get("sourceTags"):
+        result["sourceTags"] = old["sourceTags"]
     result["id"] = chosen_id
     result.setdefault("importedAt", int(time.time() * 1000))
     result.setdefault("progress", 0)
@@ -181,14 +221,22 @@ def merged_metadata(old: dict | None, new: dict, chosen_id: str) -> dict:
     return result
 
 
-def apply_item(api, repo: str, token: str, item: dict) -> str:
-    """One commit, optimistic concurrency, and re-plan on revision changes."""
+def apply_item(api, repo: str, token: str, item: dict, *,
+               expected_revision: str | None = None,
+               return_revision: bool = False) -> str | tuple[str, str]:
+    """Validate all stored artifacts, then atomically reconcile any drift.
+
+    When given expected_revision, refuse concurrent plan drift rather than
+    silently rebasing operations a user approved against an older revision.
+    """
     from huggingface_hub import CommitOperationAdd, hf_hub_download
-    for attempt in range(3):
+    for attempt in range(3 if expected_revision is None else 1):
         info = api.dataset_info(repo, token=token)
-        if info.private is not True:
-            raise UploadError("Refusing to write to a public dataset")
+        if info.private is not True or not info.sha:
+            raise UploadError("Refusing to write to an unverified or public dataset")
         sha = info.sha
+        if expected_revision is not None and sha != expected_revision:
+            raise UploadError("Dataset changed since preview; re-run the upload plan")
         files = set(api.list_repo_files(repo_id=repo, repo_type="dataset",
                                         revision=sha, token=token))
         if "data/library.json" in files:
@@ -201,8 +249,6 @@ def apply_item(api, repo: str, token: str, item: dict) -> str:
                 raise UploadError(
                     "Catalogue is missing but data/ already contains files. "
                     "Refusing to initialise over orphaned data.")
-            # First-ever upload: create the v1 catalogue and novel files
-            # together in the same optimistic-concurrency-guarded commit.
             original = {"version": 1, "books": []}
             books = []
         entry, _ = matching_entry(books, item["metadata"], item["epub"])
@@ -211,40 +257,67 @@ def apply_item(api, repo: str, token: str, item: dict) -> str:
             raise UploadError("Remote identity changed since planning; re-run plan")
         archive = f"data/novels/{desired_id}/original.zip"
         epub_path = f"data/novels/{desired_id}/source.epub"
-        if entry and (entry["epubPath"] != epub_path or entry.get("archivePath") not in (None, archive)):
+        if entry and (entry["epubPath"] != epub_path or
+                      entry.get("archivePath") not in (None, archive)):
             raise UploadError("Unexpected remote paths; refusing overwrite")
         if not entry and (archive in files or epub_path in files):
             raise UploadError("Orphaned remote files: manual review required")
+        if sha256_file(item["path"]) != item["digest"]:
+            raise UploadError("Local ZIP changed after preview; re-run the upload plan")
+        archive_ok = False
         if entry and archive in files:
             cached = hf_hub_download(repo_id=repo, filename=archive, repo_type="dataset",
                                      revision=sha, token=token)
-            if hashlib.sha256(Path(cached).read_bytes()).hexdigest() == item["digest"] and epub_path in files:
-                return "UNCHANGED"
-        updated = merged_metadata(entry["metadata"] if entry else None, item["metadata"], desired_id)
+            archive_ok = sha256_file(Path(cached)) == item["digest"]
+        epub_ok = False
+        if entry and epub_path in files:
+            cached = hf_hub_download(repo_id=repo, filename=epub_path, repo_type="dataset",
+                                     revision=sha, token=token)
+            epub_ok = sha256_file(Path(cached)) == hashlib.sha256(item["epub"]).hexdigest()
+        updated = merged_metadata(entry["metadata"] if entry else None,
+                                  item["metadata"], desired_id)
+        metadata_ok = bool(entry and entry["metadata"] == updated and
+                           entry.get("archivePath") == archive)
+        if archive_ok and epub_ok and metadata_ok:
+            return ("UNCHANGED", sha) if return_revision else "UNCHANGED"
         if entry:
             entry["metadata"] = updated
             entry["archivePath"] = archive
         else:
             original["books"].append({"id": desired_id, "metadata": updated,
                                       "epubPath": epub_path, "archivePath": archive})
-        payload = (json.dumps(original, ensure_ascii=False, indent=2) + "\n").encode()
-        operations = [
-            CommitOperationAdd(path_in_repo=archive, path_or_fileobj=str(item["path"])),
-            CommitOperationAdd(path_in_repo=epub_path, path_or_fileobj=io.BytesIO(item["epub"])),
-            CommitOperationAdd(path_in_repo="data/library.json", path_or_fileobj=io.BytesIO(payload)),
-        ]
+        operations = []
+        if not archive_ok:
+            operations.append(CommitOperationAdd(
+                path_in_repo=archive, path_or_fileobj=str(item["path"])))
+        if not epub_ok:
+            operations.append(CommitOperationAdd(
+                path_in_repo=epub_path, path_or_fileobj=io.BytesIO(item["epub"])))
+        operations.append(CommitOperationAdd(
+            path_in_repo="data/library.json",
+            path_or_fileobj=io.BytesIO(
+                (json.dumps(original, ensure_ascii=False, indent=2) + "\n").encode())))
         try:
-            api.create_commit(repo_id=repo, repo_type="dataset", token=token,
-                              operations=operations, parent_commit=sha,
-                              commit_message=f"{'Update' if entry else 'Add'} novel: {updated['title'][:70]}")
-            return "UPDATED" if entry else "NEW"
+            result = api.create_commit(
+                repo_id=repo, repo_type="dataset", token=token,
+                operations=operations, parent_commit=sha,
+                commit_message=f"{'Update' if entry else 'Add'} novel: {updated['title'][:70]}")
+            status = "UPDATED" if entry else "NEW"
+            if return_revision:
+                new_sha = getattr(result, "oid", None)
+                if not isinstance(new_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", new_sha):
+                    raise UploadError(
+                        "Commit response lacked a valid revision; re-preview "
+                        "before attempting remaining books")
+                return status, new_sha
+            return status
         except Exception as exc:
             response = getattr(exc, "response", None)
-            if getattr(response, "status_code", None) in (409, 412) and attempt < 2:
+            if (expected_revision is None and
+                    getattr(response, "status_code", None) in (409, 412) and attempt < 2):
                 continue
             raise
     raise UploadError("Dataset changed repeatedly; no commit was applied")
-
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Safe incremental novel ZIP uploader")
@@ -252,6 +325,8 @@ def main(argv=None) -> int:
     parser.add_argument("--repo", default=DEFAULT_REPO)
     parser.add_argument("--recursive", action="store_true")
     parser.add_argument("--apply", action="store_true", help="Write changes to private HF dataset")
+    parser.add_argument("--interactive", action="store_true",
+                        help="Preview and approve in one revision-guarded process")
     args = parser.parse_args(argv)
     directory = Path(args.folder)
     if not directory.is_dir():
@@ -280,28 +355,49 @@ def main(argv=None) -> int:
         files = set(api.list_repo_files(repo_id=args.repo, repo_type="dataset", revision=sha))
         if "data/library.json" not in files:
             print("[NEW PRIVATE DATASET] Initial library catalogue will be created on first upload.")
+        # Only compare remote artifacts for the novels in this local batch.
+        relevant_paths = set()
+        for _, meta, epub, _ in local:
+            try:
+                existing, _ = matching_entry(books, meta, epub)
+            except UploadError:
+                continue  # A conflict will be shown explicitly in the plan.
+            if existing:
+                relevant_paths.add(f"data/novels/{existing['id']}/original.zip")
+                relevant_paths.add(f"data/novels/{existing['id']}/source.epub")
         hashes = {}
-        for b in books:
-            archive = b.get("archivePath")
-            if archive and archive in files:
-                cached = hf_hub_download(repo_id=args.repo, filename=archive, repo_type="dataset", revision=sha)
-                hashes[archive] = hashlib.sha256(Path(cached).read_bytes()).hexdigest()
+        for remote_path in sorted(relevant_paths & files):
+            cached = hf_hub_download(repo_id=args.repo, filename=remote_path,
+                                     repo_type="dataset", revision=sha)
+            hashes[remote_path] = sha256_file(Path(cached))
         instructions = plan(books, local, hashes, files)
         for item in instructions:
             print(f"[{item['state']}] {item['path'].name}: {item['reason']}")
         if any(item["state"] == "CONFLICT" for item in instructions):
             print("Conflicts found. All writes blocked.", file=sys.stderr)
             return 2
-        if not args.apply:
-            print("Preview only. Add --apply to perform updates.")
+        if not args.apply and not args.interactive:
+            print("Preview only. Add --apply or --interactive to perform updates.")
             return 0
+        if args.interactive:
+            if not sys.stdin.isatty():
+                raise UploadError("Interactive approval requires a local console")
+            if input("Apply exactly this plan? Type YES: ").strip() != "YES":
+                print("Cancelled; no remote changes made.")
+                return 0
         from huggingface_hub import get_token
         token = get_token()
         if not token:
             raise UploadError("No Hugging Face token configured")
+        if api.dataset_info(args.repo, token=token).sha != sha:
+            raise UploadError("Dataset changed since preview; no writes performed")
+        expected = sha
         for item in instructions:
             if item["state"] != "UNCHANGED":
-                print(f"[{apply_item(api, args.repo, token, item)}] {item['path'].name}")
+                status, expected = apply_item(
+                    api, args.repo, token, item,
+                    expected_revision=expected, return_revision=True)
+                print(f"[{status}] {item['path'].name}")
         return 0
     except Exception as exc:
         print(f"ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)

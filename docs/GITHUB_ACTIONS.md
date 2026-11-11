@@ -6,23 +6,24 @@ This GitHub repository is **PUBLIC**, but your novel dataset remains PRIVATE. Wo
 
 Open GitHub repository **Settings > Secrets and variables > Actions** and create a repository secret named `HF_STORAGE_CONTROLLER_TOKEN`. Use a Hugging Face token with permission to modify your private `AdityaSreevatsaK/Taiyous-Novels` dataset.
 
-For the optional private reports/backup workflows, the token also needs access to a **separate PRIVATE** Hugging Face dataset, such as `AdityaSreevatsaK/Taiyous-Novels-Backup` (created automatically as private if allowed). This second dataset is **not needed for clearing data**.
+For the optional private reports/backup workflows, the token also needs access to a **separate PRIVATE** Hugging Face dataset, such as `AdityaSreevatsaK/Taiyous-Novels-Backup` (created automatically as private if allowed). This second dataset is used only for private backups/reports; clearing data from Actions is disabled.
 
 The cover import workflow can use `NOVEL_LIBRARY_ACTIONS_TOKEN` if the standard GitHub token cannot read the `RichardDaffern/Novel_Library` Actions artifact.
 
-## Clear dataset contents with one checkbox
+## Destructive operations are local and backup-first
 
-1. Open [GitHub Actions](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions).
-2. Choose **HF - CLEAR ALL data**.
-3. Click **Run workflow**, tick the single acknowledgment checkbox, and run it.
+The previous `HF - CLEAR ALL data` workflow has been removed because its checkbox-only
+path could destroy every novel, cover and personal record without a backup.
+The noninteractive `taiyou_storage.actions clear` command is also removed.
 
-No backup, source SHA, typed confirmation or extra dataset input is needed. The Action will be **skipped** unless its checkbox is checked. Nothing deletes automatically or on a schedule.
+If you intentionally need to reset the complete private dataset, use
+`11_clear_hf_data.cmd` on a Windows computer. It first previews all affected
+files, downloads a complete backup at one immutable revision, checks each file's
+SHA-256 checksum, requires two separate confirmations, and refuses to delete if
+the remote revision or file inventory changes. Retain the verified local backup.
 
-| Action | Exactly what gets deleted |
-|---|---|
-| **HF - CLEAR ALL data** | All files under `data/`, including novels, EPUBs, ZIPs, covers, personal reviews, reading progress and collections. The private dataset repository remains, with an empty `data/library.json`. Git/LFS history may still retain old blobs. |
-
-**Warning:** This workflow does **not** create backups. Without other saved copies, deletion can be irreversible. The script still performs private-dataset identity and revision checks without requiring user input.
+**Never use this full reset for deleting one novel or clearing downloads.**
+It affects all `data/` objects, including novels, notes and progress.
 
 ## Other available manual workflows
 
@@ -33,7 +34,7 @@ No backup, source SHA, typed confirmation or extra dataset input is needed. The 
 | **HF - Back up entire dataset PRIVATELY** | Optional full private snapshot with SHA-256 verification |
 | **HF - Upload covers from Novel_Library artifact** | Imports cover images from an existing source Actions artifact by run ID; preview by default |
 
-The local `11_clear_hf_data.cmd` retains its own backup-first procedure; the **GitHub Actions clear-data command** is the checkbox-only alternative.
+GitHub Actions can inspect, back up and import covers, but cannot clear the dataset.
 
 ## Still local-only
 
@@ -43,4 +44,4 @@ The local `11_clear_hf_data.cmd` retains its own backup-first procedure; the **G
 
 CI remains offline and is never allowed to touch the real Hugging Face dataset.
 
-**Full dataset-repository deletion has been removed from this controller.** The controller can clear its contents but does not offer a GitHub Action or CLI subcommand to delete the Hugging Face repository itself.
+**All GitHub Actions destruction paths have been retired.** Only the local, interactive, backup-first reset can clear `data/`; it cannot delete the Hugging Face dataset repository.
