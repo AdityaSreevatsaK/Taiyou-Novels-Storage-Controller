@@ -210,6 +210,10 @@ def merged_metadata(old: dict | None, new: dict, chosen_id: str) -> dict:
     # Preserve all existing app/user-managed fields unless they are source-managed.
     result = dict(old or {})
     result.update(new)
+    # Older ZIPs may omit source genres that were safely backfilled later.
+    # Missing/empty incoming tags must not erase already verified genres.
+    if old and old.get("sourceTags") and not new.get("sourceTags"):
+        result["sourceTags"] = old["sourceTags"]
     result["id"] = chosen_id
     result.setdefault("importedAt", int(time.time() * 1000))
     result.setdefault("progress", 0)
