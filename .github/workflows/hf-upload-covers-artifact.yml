@@ -57,6 +57,7 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_STORAGE_CONTROLLER_TOKEN }}
           HF_HUB_DISABLE_PROGRESS_BARS: "1"
+          HF_HUB_DISABLE_SYMLINKS_WARNING: "1"
         shell: bash
         run: |
           if ! python -m taiyou_storage.covers incoming/covers.zip >"$RUNNER_TEMP/private-cover-log.txt" 2>&1; then

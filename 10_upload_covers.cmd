@@ -1,5 +1,7 @@
 @echo off
 setlocal
+rem Optional: suppress harmless Windows Hugging Face cache symlink warning.
+set "HF_HUB_DISABLE_SYMLINKS_WARNING=1"
 cd /d "%~dp0"
 echo.
 echo Novel Cover Uploader - Private Hugging Face Dataset
