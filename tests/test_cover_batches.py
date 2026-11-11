@@ -55,7 +55,7 @@ class FakeHub:
                 (json.dumps({"version": 1, "books": books}) + "\n").encode("utf-8"),
         }
         for n in present:
-            ident = books[n]["id"]
+            ident = books[n - 1]["id"]
             self.files[f"data/novels/{ident}/cover.png"] = cover(n).data
         self.commits = []
         self.raise_on_commit = None
@@ -175,7 +175,7 @@ class CoverBatchTests(unittest.TestCase):
     def test_link_existing_identical_image_without_reuploading(self):
         with TemporaryDirectory() as folder:
             books = [book(1)]
-            hub = FakeHub(folder, books, present=[0])
+            hub = FakeHub(folder, books, present=[1])
             plans = proposed(books, [1])
             with patch("huggingface_hub.hf_hub_download", side_effect=hub.download):
                 new_sha, statuses = commit_cover_batch(
