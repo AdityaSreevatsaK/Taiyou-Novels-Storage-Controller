@@ -1,5 +1,6 @@
 """Offline security and correctness tests for public-repo HF maintenance actions."""
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from taiyou_storage.actions import (
@@ -53,6 +54,14 @@ class ActionSafetyTests(unittest.TestCase):
         self.assertNotEqual(ctx.exception.code, 0)
         import taiyou_storage.actions as actions
         self.assertFalse(hasattr(actions, "clear_data"))
+
+    def test_github_workflows_cannot_invoke_backup_free_clear(self):
+        workflow_root = Path(__file__).resolve().parents[1] / ".github" / "workflows"
+        self.assertFalse((workflow_root / "hf-clear-data.yml").exists())
+        for workflow in workflow_root.glob("*.yml"):
+            self.assertNotIn(
+                "taiyou_storage.actions clear", workflow.read_text(encoding="utf-8"),
+                f"Backup-free clear command reintroduced in {workflow.name}")
 
     def test_inspect_counts_only(self):
         api = FakeAPI()
