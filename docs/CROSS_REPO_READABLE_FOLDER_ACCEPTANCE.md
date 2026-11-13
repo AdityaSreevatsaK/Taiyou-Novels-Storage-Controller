@@ -47,8 +47,8 @@ dataset and then verifies:
 - ID-only and readable folder formats coexist with unchanged 24-character IDs.
 - EPUB, original ZIP, cover PNG, auxiliary file and catalogue bytes are
   accessible and match their expected SHA-256 hashes.
-- One revision-bound, atomic migration copies and removes only the ID-only
-  book's files and updates `data/library.json` without altering any
+- Two sequential revision-bound migration batches copy and remove three
+  ID-only novels' files and updates `data/library.json` without altering any
   already-readable book.
 - Cover, progress, review and collection metadata survive unchanged.
 - A stale-parent update is refused.
@@ -100,3 +100,32 @@ reviewed before a separate, verified-backup production migration is considered.
 ## Consolidation onto current Storage Controller master
 
 This workflow is based on current `master` rather than the historical PR #17 feature branch. It exercises `apply_migration_batch()` in consecutive commits with multiple legacy books in one batch while preserving already-readable books and personal sidecars. It validates the deployed Reader commit `45233f4` and reports success only after all synthetic files are removed. Production remains untouched pending verified full backup, authenticated gateway verification and separately authorised migration.
+
+
+## New production-style batch verification
+
+The latest consolidated acceptance branch adds two further synthetic legacy
+books, while retaining an already-readable novel whose title no longer
+matches its folder label. It verifies:
+
+- **Batch 1:** two legacy books moved in one atomic parent-guarded HF commit.
+- **Batch 2:** a third legacy book moved in a second HF commit.
+- Replanning after batch 1 reports finished books as already readable and the
+  remaining legacy book as unmigrated.
+- Every moved EPUB, ZIP, cover and auxiliary file matches its original SHA-256.
+- Catalogue IDs, reading progress, personal tags, ratings, comments, reviews,
+  and collection sidecars are preserved.
+- Destination collision plans, repeated old batches, stale parent writes,
+  and direct production-target use are blocked.
+- Only owned synthetic paths are removed. The pre-created PRIVATE test dataset
+  itself stays available and its original inventory is restored.
+
+The Reader contract in this workflow targets deployed master SHA
+`45233f4854b657d146965cf71a38142289411b18`. These are **real Hugging Face
+dataset tests** and **mocked Reader gateway tests**. They do not establish
+that a live OAuth-authenticated Cloudflare browser session can retrieve each
+file type from the production reader; that remains a separate prerequisite.
+
+The current production migration source and backup code remain protected by
+an independent explicit confirmation; no production novel was moved in this
+testing.
