@@ -1,0 +1,124 @@
+# One-shot cleanup of explicitly audited obsolete branches.
+# The active real-HF batch test branch is deliberately retained as a production gate.
+name: "One-shot - prune superseded readable migration branches"
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - .github/workflows/prune-superseded-readable-branches-once.yml
+
+permissions:
+  contents: write
+concurrency:
+  group: taiyou-storage-branch-prune
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    if: github.repository == 'AdityaSreevatsaK/Taiyou-Novels-Storage-Controller'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      EXPECTED_MASTER: ${{ github.sha }}
+    steps:
+      - name: Confirm merged and superseded branch heads before deleting
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from urllib.error import HTTPError
+          from urllib.parse import quote, urlencode
+          from urllib.request import Request, urlopen
+
+          repo = os.environ["GH_REPO"]
+          if repo != "AdityaSreevatsaK/Taiyou-Novels-Storage-Controller":
+              raise SystemExit("Unexpected repository. No deletion")
+          owner = repo.split("/")[0]
+          token = os.environ["GH_TOKEN"]
+          expected_master = os.environ["EXPECTED_MASTER"]
+          keep = {"master", "test/readable-folder-batch-acceptance-20261113"}
+          approved = {
+              "docs/comprehensive-agent-handbook": ("e1645006d3259fde9452bfa2d062f482bc07d8d3", 16),
+              "feature/readable-hf-folder-compatibility": ("9e00374ef1d71818d585a7f3dcb9001511b454fe", 18),
+              "feature/verified-readable-migration-batches": ("1979c93d88f45c3d18488730f494539b647cf9b3", 19),
+              "test/register-live-readable-folder-acceptance": ("9221c874f76a86dc0e0ececeedb4a376f4233def", 20),
+          }
+          legacy = "test/readable-folder-cross-repo-20261113"
+          old_sha = "f3b55fbf3d93a4c6614048e125d9a5715ca571c7"
+
+          def api(path, method="GET"):
+              request = Request("https://api.github.com/" + path, method=method, headers={
+                  "Authorization": "Bearer " + token,
+                  "Accept": "application/vnd.github+json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+                  "User-Agent": "taiyou-reviewed-branch-cleanup",
+              })
+              with urlopen(request, timeout=40) as response:
+                  data = response.read()
+              return json.loads(data) if data else None
+
+          def branch(name):
+              try:
+                  return api("repos/" + repo + "/branches/" + quote(name, safe="/"))
+              except HTTPError as error:
+                  if error.code == 404:
+                      return None
+                  raise
+
+          def active_pulls(name):
+              return api("repos/" + repo + "/pulls?" +
+                         urlencode({"state": "open", "head": owner + ":" + name}))
+
+          if branch("master")["commit"]["sha"] != expected_master:
+              raise SystemExit("Master changed since cleanup commit. No deletion")
+
+          # PR #17 was deliberately superseded without merging its old feature base.
+          # All its useful files were incorporated via merged PR #21.
+          old_pr = api("repos/" + repo + "/pulls/17")
+          new_pr = api("repos/" + repo + "/pulls/21")
+          if (old_pr["state"] == "closed" and not old_pr["merged_at"] and
+              old_pr["head"]["ref"] == legacy and old_pr["head"]["sha"] == old_sha and
+              new_pr["merged_at"] and new_pr["base"]["ref"] == "master"):
+              old_files = {f["filename"] for f in api("repos/" + repo + "/pulls/17/files?per_page=100")}
+              new_files = {f["filename"] for f in api("repos/" + repo + "/pulls/21/files?per_page=100")}
+              if old_files and old_files.issubset(new_files):
+                  approved[legacy] = (old_sha, None)
+
+          # Also clean this temporary maintenance PR's own branch only if merged
+          # at precisely the current ref SHA.
+          self_name = "maintenance/prune-superseded-readable-migration-branches"
+          self_ref = branch(self_name)
+          if self_ref:
+              prs = api("repos/" + repo + "/pulls?" +
+                        urlencode({"state":"closed", "head":owner+":"+self_name}))
+              for pr in prs:
+                  if (pr["merged_at"] and pr["head"]["ref"] == self_name and
+                      pr["head"]["sha"] == self_ref["commit"]["sha"]):
+                      approved[self_name] = (self_ref["commit"]["sha"], pr["number"])
+                      break
+
+          for name, (sha, prnum) in approved.items():
+              if name in keep:
+                  raise SystemExit("Never delete retained migration test branch or master")
+              info = branch(name)
+              if not info:
+                  print("ALREADY ABSENT:", name)
+                  continue
+              if info["protected"] or info["commit"]["sha"] != sha or active_pulls(name):
+                  print("PRESERVED (changed/protected/in use):", name)
+                  continue
+              if prnum:
+                  pr = api("repos/" + repo + "/pulls/" + str(prnum))
+                  if not (pr["merged_at"] and pr["head"]["ref"] == name and
+                          pr["head"]["sha"] == sha and pr["base"]["ref"] == "master"):
+                      print("PRESERVED (merged PR evidence changed):", name)
+                      continue
+              again = branch(name)
+              if not again or again["commit"]["sha"] != sha or again["protected"] or active_pulls(name):
+                  print("PRESERVED (changed at deletion time):", name)
+                  continue
+              api("repos/" + repo + "/git/refs/heads/" + quote(name, safe="/"), method="DELETE")
+              print("DELETED:", name)
+          PY
