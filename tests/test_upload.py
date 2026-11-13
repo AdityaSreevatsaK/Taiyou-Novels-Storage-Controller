@@ -158,15 +158,19 @@ class UploadTests(unittest.TestCase):
                 api_type.return_value.create_commit.assert_not_called()
 
     def test_main_preview_on_brand_new_empty_dataset_never_writes(self):
-        from taiyou_storage.upload import main
+        from taiyou_storage.upload import main, plan as actual_plan
         with tempfile.TemporaryDirectory() as folder:
             fixture(Path(folder))
             with patch("taiyou_storage.core.load_remote", return_value=([], "d" * 40)) as load, \
-                    patch("huggingface_hub.HfApi") as factory:
+                    patch("huggingface_hub.HfApi") as factory, \
+                    patch("taiyou_storage.upload.plan", wraps=actual_plan) as planner:
                 api = factory.return_value
                 api.list_repo_files.return_value = [".gitattributes", "README.md"]
                 self.assertEqual(main([folder]), 0)
-                load.assert_called_once_with(
+                self.assertIs(planner.call_args.kwargs["readable_new"], True)
+                self.assertEqual(main([folder, "--legacy-new-folders"]), 0)
+                self.assertIs(planner.call_args.kwargs["readable_new"], False)
+                load.assert_called_with(
                     "AdityaSreevatsaK/Taiyous-Novels", allow_empty=True)
                 api.create_commit.assert_not_called()
 

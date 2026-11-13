@@ -336,7 +336,9 @@ def main(argv=None) -> int:
     parser.add_argument("--repo", default=DEFAULT_REPO)
     parser.add_argument("--recursive", action="store_true")
     parser.add_argument("--readable-folders", action="store_true",
-                        help="Create new novels in ID - Title directories on a disposable private test dataset only")
+                        help="Explicitly use ID - Title folders for new novels (now the default)")
+    parser.add_argument("--legacy-new-folders", action="store_true",
+                        help="Opt out: create NEW novels in the former ID-only directory style")
     parser.add_argument("--apply", action="store_true", help="Write changes to private HF dataset")
     parser.add_argument("--interactive", action="store_true",
                         help="Preview and approve in one revision-guarded process")
@@ -385,7 +387,7 @@ def main(argv=None) -> int:
                                      repo_type="dataset", revision=sha)
             hashes[remote_path] = sha256_file(Path(cached))
         instructions = plan(books, local, hashes, files,
-                            readable_new=args.readable_folders)
+                            readable_new=(not args.legacy_new_folders or args.readable_folders))
         for item in instructions:
             print(f"[{item['state']}] {item['path'].name}: {item['reason']}")
         if any(item["state"] == "CONFLICT" for item in instructions):
@@ -394,8 +396,6 @@ def main(argv=None) -> int:
         if not args.apply and not args.interactive:
             print("Preview only. Add --apply or --interactive to perform updates.")
             return 0
-        if args.readable_folders and args.repo == DEFAULT_REPO:
-            raise UploadError("Readable folder writes to production are blocked until the reader migration is deployed")
         if args.interactive:
             if not sys.stdin.isatty():
                 raise UploadError("Interactive approval requires a local console")

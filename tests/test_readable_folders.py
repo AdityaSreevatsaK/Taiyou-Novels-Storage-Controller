@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 from taiyou_storage.core import StorageError, validate_catalogue
 from taiyou_storage.covers import Cover, make_plan
-from taiyou_storage.migrate_folders import MigrationError, apply_one, plan_migration
+from taiyou_storage.migrate_folders import (MigrationError, apply_one, apply_migration_batch, group_migration_batches, plan_migration)
 from taiyou_storage.paths import (
     book_dir, folder_from_epub_path, legacy_dir, readable_dir, readable_label)
 from taiyou_storage.upload import apply_item, plan
@@ -202,6 +202,59 @@ class MigrationTests(unittest.TestCase):
                 self.assertEqual(hub.files[destination], originals[source])
             self.assertEqual(
                 plan_migration([upgraded], set(hub.files))[0]["status"], "ALREADY_READABLE")
+
+    def test_batch_budget_and_occupied_target(self):
+        book = entry(cover=True)
+        hub_folder = book_dir(book)
+        current = {hub_folder + "/source.epub", hub_folder + "/original.zip",
+                   hub_folder + "/cover.png"}
+        destination = readable_dir(BOOK_ID, book["metadata"]["title"])
+        self.assertEqual(plan_migration([book], current | {destination + "/unexpected.txt"})[0]["status"], "CONFLICT")
+        safe = plan_migration([book], current)
+        self.assertEqual(len(group_migration_batches(safe)), 1)
+        self.assertEqual(len(group_migration_batches(safe)[0]), 1)
+        self.assertRaises(MigrationError, group_migration_batches, safe, 0, 100)
+        self.assertRaises(MigrationError, group_migration_batches, safe, 8, 3)
+        huge = {**safe[0], "moves": [(str(i), str(i)) for i in range(80)]}
+        self.assertRaises(MigrationError, group_migration_batches, [huge])
+
+    def test_batched_atomic_move_preserves_all_bytes_and_metadata(self):
+        book = entry(cover=True)
+        with TemporaryDirectory() as tmp:
+            hub = CopyAwareFakeHub(Path(tmp), book)
+            extra_id = "b" * 24
+            second_folder = legacy_dir(extra_id)
+            second = {
+                "id": extra_id,
+                "metadata": {"id": extra_id, "title": "Second Synthetic Book",
+                             "progress": 22, "personalTags": ["Later"]},
+                "epubPath": second_folder + "/source.epub",
+                "archivePath": second_folder + "/original.zip",
+            }
+            catalog = json.loads(hub.files["data/library.json"])
+            catalog["books"].append(second)
+            hub.files["data/library.json"] = json.dumps(catalog).encode()
+            hub.files[second["epubPath"]] = b"second synthetic epub"
+            hub.files[second["archivePath"]] = b"second synthetic zip"
+            baseline = dict(hub.files)
+            work = plan_migration(catalog["books"], set(hub.files))
+            self.assertEqual([x["status"] for x in work], ["MIGRATE", "MIGRATE"])
+            with patch("huggingface_hub.hf_hub_download", side_effect=hub.download):
+                with self.assertRaisesRegex(MigrationError, "verified private backup"):
+                    apply_migration_batch(hub, "AdityaSreevatsaK/Taiyous-Novels",
+                                          "token", work, hub.sha)
+                self.assertFalse(hub.commits)
+                sha = apply_migration_batch(hub, TEST_REPO, "token", work, hub.sha)
+            self.assertEqual(sha, "e" * 40)
+            self.assertEqual(len(hub.commits), 1)
+            migrated = json.loads(hub.files["data/library.json"])
+            self.assertEqual(len(validate_catalogue(migrated)), 2)
+            for planned in work:
+                for old, new in planned["moves"]:
+                    self.assertNotIn(old, hub.files)
+                    self.assertEqual(hub.files[new], baseline[old])
+            self.assertEqual(migrated["books"][0]["metadata"]["comments"], "Keep my reader notes")
+            self.assertEqual(migrated["books"][1]["metadata"]["personalTags"], ["Later"])
 
     def test_revision_drift_refuses_all_writes(self):
         book = entry()

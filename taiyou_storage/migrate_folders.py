@@ -31,10 +31,18 @@ def plan_migration(books: list[dict], paths: set[str]) -> list[dict]:
         old_dir = book_dir(book)
         dest_dir = readable_dir(book_id, str(book["metadata"].get("title") or "Untitled"))
         current_files = sorted(p for p in paths if p.startswith(old_dir + "/"))
+        unsafe_members = any(
+            "\\" in path or any(part in ("", ".", "..") for part in path.split("/"))
+            for path in current_files)
+        destination_occupied = any(path.startswith(dest_dir + "/") for path in paths)
         status, reason = "MIGRATE", ""
         moves = []
         if old_dir != legacy_dir(book_id):
             status, reason = "ALREADY_READABLE", "Existing readable name remains stable"
+        elif unsafe_members:
+            status, reason = "CONFLICT", "Unsafe file path under original directory"
+        elif destination_occupied:
+            status, reason = "CONFLICT", "Readable destination directory is already occupied"
         elif not current_files or book["epubPath"] not in current_files:
             status, reason = "CONFLICT", "Required source EPUB missing"
         elif (book.get("archivePath") and book["archivePath"] not in current_files):
@@ -112,6 +120,99 @@ def apply_one(api, repo: str, token: str, item: dict, expected_sha: str) -> str:
     if not isinstance(new_sha, str) or not re.fullmatch(r"[a-f0-9]{40}", new_sha):
         raise MigrationError("Commit outcome uncertain; re-preview before retrying")
     return new_sha
+
+
+def group_migration_batches(items: list[dict], max_books: int = 8,
+                            max_operations: int = 70) -> list[list[dict]]:
+    """Limit commits to a safe number of copy/delete operations plus catalogue."""
+    if not 1 <= max_books <= 12 or not 3 <= max_operations <= 100:
+        raise MigrationError("Invalid migration batch budget")
+    groups, current, count = [], [], 1
+    for item in items:
+        if item["status"] != "MIGRATE":
+            continue
+        weight = 2 * len(item["moves"])
+        if weight + 1 > max_operations:
+            raise MigrationError("Single novel contains too many files for one commit")
+        if current and (len(current) >= max_books or count + weight > max_operations):
+            groups.append(current)
+            current, count = [], 1
+        current.append(item)
+        count += weight
+    if current:
+        groups.append(current)
+    return groups
+
+
+def apply_migration_batch(api, repo: str, token: str, items: list[dict],
+                          expected_sha: str, *, production_backup_verified: bool = False) -> str:
+    """Atomically rename selected novels at one pinned revision.
+
+    Production is protected by a separate verified-backup orchestration gate.
+    Direct CLI apply and apply_one still refuse production.
+    """
+    if repo == DEFAULT_REPO and not production_backup_verified:
+        raise MigrationError("Production requires a complete verified private backup")
+    if not items or any(item.get("status") != "MIGRATE" for item in items):
+        raise MigrationError("Expected only previously planned migration items")
+    from huggingface_hub import (
+        CommitOperationAdd, CommitOperationCopy, CommitOperationDelete, hf_hub_download)
+    info = api.dataset_info(repo, token=token)
+    if info.private is not True or info.sha != expected_sha:
+        raise MigrationError("Private dataset revision changed; re-run migration preview")
+    files = set(api.list_repo_files(
+        repo_id=repo, repo_type="dataset", revision=expected_sha, token=token))
+    source = hf_hub_download(
+        repo_id=repo, repo_type="dataset", filename="data/library.json",
+        revision=expected_sha, token=token)
+    catalogue = json.loads(Path(source).read_text(encoding="utf-8"))
+    books = validate_catalogue(catalogue)
+    latest = {item["id"]: item for item in plan_migration(books, files)}
+    if any(item["status"] == "CONFLICT" for item in latest.values()):
+        raise MigrationError("A storage folder conflict was detected; no writes")
+    indexed = {book["id"]: book for book in books}
+    operations = []
+    handled = set()
+    for original in items:
+        ident = original["id"]
+        current = latest.get(ident)
+        if (ident in handled or current is None or
+                any(current[key] != original[key]
+                    for key in ("status", "old", "new", "moves"))):
+            raise MigrationError("Plan changed after preview; no writes")
+        handled.add(ident)
+        book = indexed[ident]
+        before, after = current["old"], current["new"]
+        book["epubPath"] = after + "/source.epub"
+        if book.get("archivePath"):
+            book["archivePath"] = after + "/original.zip"
+        for container in (book, book["metadata"]):
+            cover = container.get("coverPath")
+            if cover is not None:
+                if not isinstance(cover, str) or not cover.startswith(before + "/"):
+                    raise MigrationError("Unexpected cover path during migration")
+                container["coverPath"] = after + cover[len(before):]
+        operations.extend(
+            CommitOperationCopy(src_path_in_repo=src, path_in_repo=dst,
+                                src_revision=expected_sha)
+            for src, dst in current["moves"])
+        operations.extend(
+            CommitOperationDelete(path_in_repo=src) for src, _ in current["moves"])
+    validate_catalogue(catalogue)
+    if len(operations) + 1 > 100:
+        raise MigrationError("Migration batch exceeds safe operation count")
+    operations.append(CommitOperationAdd(
+        path_in_repo="data/library.json",
+        path_or_fileobj=io.BytesIO(
+            (json.dumps(catalogue, ensure_ascii=False, indent=2) + "\n").encode())))
+    result = api.create_commit(
+        repo_id=repo, repo_type="dataset", token=token, operations=operations,
+        parent_commit=expected_sha,
+        commit_message=f"Rename {len(items)} novel storage folder(s) to readable names")
+    next_sha = getattr(result, "oid", None)
+    if not isinstance(next_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", next_sha):
+        raise MigrationError("Uncertain migration commit outcome; re-preview")
+    return next_sha
 
 
 def run(argv=None) -> int:
