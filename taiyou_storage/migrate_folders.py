@@ -6,6 +6,7 @@ the reader supports both layouts and a verified full backup exists.
 from __future__ import annotations
 
 import argparse
+import io
 from copy import deepcopy
 from datetime import datetime, timezone
 import json
@@ -102,7 +103,7 @@ def apply_one(api, repo: str, token: str, item: dict, expected_sha: str) -> str:
                       for src, _ in current["moves"])
     operations.append(CommitOperationAdd(
         path_in_repo="data/library.json",
-        path_or_fileobj=(json.dumps(catalogue, ensure_ascii=False, indent=2) + "\n").encode()))
+        path_or_fileobj=io.BytesIO((json.dumps(catalogue, ensure_ascii=False, indent=2) + "\n").encode())))
     response = api.create_commit(
         repo_id=repo, repo_type="dataset", token=token, operations=operations,
         parent_commit=expected_sha,
