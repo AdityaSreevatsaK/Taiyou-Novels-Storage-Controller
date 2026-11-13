@@ -867,3 +867,478 @@ Historical artifact expiry is a real limitation. Missing/expired artifacts are *
 
 The relevant tests are in `tests/test_genre_repair.py`. They should cover noisy `dc:subject` filtering, source identity, duplicate safeguards, absent/expired artifacts, preservation of personal metadata and add-only updates. This feature should be changed only as a separately scoped request.
 
+
+## 14. Windows launcher catalogue
+
+For an AI agent asked to "add an option to the menu" or "fix the CMD", first inspect both the launcher and its Python entrypoint. CMD is only an interface; the real business rules belong in Python.
+
+| File | Effective behaviour | Safety notes |
+|---|---|---|
+| `00_storage_menu.cmd` | Main Windows selection menu | Only working choices are shown; do not imply every numbered launcher is implemented |
+| `01_bulk_upload.cmd` | Calls `python -m taiyou_storage.upload novels --interactive` through the Windows `py` launcher | Keeps preview and YES prompt in one process |
+| `02_download_all.cmd` | Calls `taiyou_storage.cli download` | Downloads original ZIPs locally; does not erase cloud copies |
+| `03_list_novels.cmd` | Calls `taiyou_storage.cli list` | Produces a local CSV containing private titles |
+| `04_detect_conflicts.cmd` | Calls `taiyou_storage.cli conflicts` | Reports duplicate titles but does not merge them |
+| `05_verify_integrity.cmd` | Placeholder | Do not advertise as a complete verification tool |
+| `06_sync_status.cmd` | Calls `taiyou_storage.cli status` | EPUB-derived ID presence only, not full checksums |
+| `07_backup_catalogue.cmd` | Calls `taiyou_storage.cli backup` | Backups only the catalogue, not all novel files |
+| `08_restore_novel.cmd` | Placeholder | Do not advertise automatic restore |
+| `09_delete_novel.cmd` | Placeholder | Do not replace with a full dataset reset |
+| `10_upload_covers.cmd` | Detects/prompts for a cover ZIP and invokes `covers --interactive` | Uses safe path quoting and one-process human confirmation |
+| `11_clear_hf_data.cmd` | Runs reset preview; then asks whether to initiate backup-first reset | Uses separate prompts and the Python reset's additional checks |
+
+Use `py -m ...` on Windows where the launchers do so. On Linux CI, `python -m ...` is normal. On Windows, use `python -m pip` or `py -m pip` rather than assuming Unix shell semantics.
+
+If modifying a launcher, preserve exit-code propagation, quoting for paths with spaces and surrounding double quotes, working-directory behaviour, and the clear distinction between preview and apply.
+
+## 15. GitHub Actions architecture and safety boundaries
+
+### 15.1 Workflow index
+
+| Workflow file | Trigger | What it does |
+|---|---|---|
+| `.github/workflows/ci.yml` | Push to `master`, pull requests, manual dispatch | Offline Python test matrix, compile, dependency checks |
+| `hf-inspect.yml` | Manual `workflow_dispatch` | Read-only private dataset inspection; prints counts only |
+| `hf-private-backup.yml` | Manual | Copies and verifies private snapshot into a separate private HF dataset |
+| `hf-private-reports.yml` | Manual | Writes sensitive reports to a separate private HF dataset |
+| `hf-upload-covers-artifact.yml` | Manual with run ID and apply checkbox | Imports cover-only artifacts from Novel_Library |
+| `hf-restore-genres.yml` | Manual with apply checkbox | Independent historical genre repair |
+| `release.yml` | Completed successful `master` push CI workflow | Creates a guarded version tag and public code-only GitHub Release |
+| `prune-reviewed-branches.yml` | A push to `master` changing **that exact workflow path** | Historical, allowlisted one-shot removal of audited merged branches |
+
+There is **no active backup-free cloud-clearing workflow**. The old `hf-clear-data.yml` was deliberately deleted. Avoid reintroducing broad destruction capabilities through a new filename or different module.
+
+### 15.2 Workflow least privilege
+
+- Read-only Actions use `permissions: contents: read` unless explicitly justified otherwise.
+- The release publisher needs `contents: write` to create tags and releases, but should never have HF secrets.
+- The historical branch-cleanup workflow needs `contents: write` only for its narrowly allowlisted GitHub ref deletions. It has already run successfully as part of the project history; it should not be turned into a generic cleanup command.
+- Private HF workflows receive secrets only in the relevant job steps.
+- Avoid uploading `data/library.json`, CSV title lists, novel ZIPs, EPUBs or cover images as **public** Actions artifacts.
+- Do not print raw exception payloads from APIs that might include private paths or authentication details; `actions.py` deliberately reduces exception logging.
+- Workflows sharing `concurrency: group: hf-storage-controller` serialise certain manual HF activities, reducing simultaneous writes from that workflow group. This is **not** a global mutex against local scripts, other repos, the reader app or direct HF clients. Keep optimistic concurrency in application code.
+
+### 15.3 Actions dependencies
+
+`requirements.txt` uses `-c constraints.txt` so the tested Hugging Face Python dependency versions resolve consistently. Current `constraints.txt` pins the tested `huggingface_hub` and dependencies. GitHub Actions `uses:` references are pinned to immutable full commit SHAs (with comments showing the associated major tag).
+
+Changing any pinned dependency must be intentional, with a passing multi-platform CI run. Blindly replacing pinned SHAs with mutable tags weakens reproducibility. Never assume a new major library version is API-compatible simply because `pip install` succeeds.
+
+## 16. CI and automated testing strategy
+
+### 16.1 Basic commands
+
+```powershell
+py -m pip install -r requirements.txt
+py -m pip check
+py -m compileall -q taiyou_storage tests
+py -m unittest discover -s tests -v
+```
+
+The GitHub Actions matrix in `ci.yml` is:
+
+- `ubuntu-latest` × Python `3.11`
+- `ubuntu-latest` × Python `3.12`
+- `windows-latest` × Python `3.11`
+- `windows-latest` × Python `3.12`
+
+**Verified milestone:** The `v0.1.0` branch history passed **87 offline tests** per environment. The test total is a historical fact, not a hard-coded target; new regression tests should increase it.
+
+### 16.2 Test map
+
+| Test module | Responsibilities |
+|---|---|
+| `tests/test_core.py` | Catalogue validation, normalised titles, CSV/conflict logic, remote load behaviour |
+| `tests/test_upload.py` | Novel parsing, identity collisions, metadata preservation, unchanged/repair planning, guards against changed previews, ZIP budgets |
+| `tests/test_covers.py` | Cover manifest formats, nested artifact ZIPs, source/title matching, safe image validation, preview and cancellation |
+| `tests/test_cover_batches.py` | Batch sizing, atomicity, idempotence, interrupted/resumable cover uploads, 409/412/429 handling |
+| `tests/test_reset.py` | Path validation, backup/reset preconditions, revision drift, private dataset requirements |
+| `tests/test_actions.py` | Safe public Actions outputs, private backup/report checks, absence of backup-free clearing |
+| `tests/test_genre_repair.py` | Genre filtering, source matching, add-only catalogue restoration safeguards |
+| `tests/test_smoke_integration.py` | End-to-end synthetic novel uploads, EPUB repairs, cover-batch resume and reset-preview safety |
+
+### 16.3 Synthetic end-to-end simulation
+
+`tests/test_smoke_integration.py` contains a `FakePrivateHub` with:
+
+- In-memory immutable snapshots, each identified by a different SHA.
+- Revision-aware `dataset_info` and `list_repo_files`.
+- Synthetic cached downloads from each revision.
+- `create_commit` applying staged additions and rejecting stale `parent_commit` values.
+- Controlled failure injection between cover batches.
+- Synthetic ZIP/EPUB contents and simple cover images.
+- Real CLI entrypoints invoked against mocked Hub integration points.
+
+This is valuable because it tests **the whole flow between CLI, planners and revision checks**, not only individual helpers.
+
+**Caveat:** The fake Hub cannot prove every live Hugging Face API behavior, authorisation nuance, network failure or Git LFS interaction. Never call a mock-only pass a production end-to-end certification.
+
+### 16.4 Minimum regressions before merging
+
+For **novel uploader changes**, cover at least:
+
+- Brand-new private dataset initialisation.
+- Existing book matched by stable ID.
+- Same book with a newly generated EPUB but stable old ID.
+- Same ZIP digest with corrupted or missing remote EPUB.
+- Same ZIP and EPUB with stale source-managed catalogue metadata.
+- Preservation of user progress, personal tags, ratings, notes and existing nonempty source genres.
+- Two inputs targeting one existing book.
+- Title collision with different/ambiguous authors.
+- Changed local ZIP between preview and commit.
+- Changed remote SHA between preview and commit.
+- Multi-novel partial failure/re-preview reconciliation.
+- Refusal of public or unknown/orphaned datasets.
+- Archive count, expanded-byte, ratio and path-validation guards.
+
+For **cover changes**, cover:
+
+- NovelFull-style manifest, `results` manifest and outer ZIP wrappers.
+- Exact source URL match, allowed unique-title fallback and ambiguous duplicate rejection.
+- `NEW`/`LINK`/`UPDATE`/`UNCHANGED`/`MISSING`/`CONFLICT` statuses.
+- Multiple covers for one book blocked.
+- Changed bytes versus same remote bytes.
+- Atomic binary+catalogue updates and no commit for unchanged covers.
+- Multi-batch success, injected failure and rerun/resume.
+- Long 429 stops, short 429 retries once, 409/412 abort.
+- Missing/private/public dataset checks.
+- Preview and interactive cancellation do not write.
+
+For **reset/backup changes**, cover:
+
+- Only proper `data/` paths can be selected for deletion.
+- Path traversal and duplicate entries rejected.
+- Revision and path inventory drift aborts deletion.
+- No remote delete without verified backup and interactive confirmations.
+- Incomplete/corrupted backup prevents delete.
+- No GitHub Actions backup-free clearing workflow.
+- Public backup repositories rejected.
+- Only private reports generated, without sensitive CI output.
+
+### 16.5 Additional live testing
+
+**Operational advice:** A separately created **disposable private HF dataset** is suitable for live integration smoke testing *only when explicitly authorised*. Use synthetic novels and covers, an explicit `--repo` override, and a token restricted to the test dataset where possible. Confirm repo ID and privacy before every write.
+
+Do **not**:
+
+- Point a generic test's default dataset at production.
+- Use the real private novel collection as test fixtures.
+- Share real catalogue metadata in CI artifacts.
+- Delete or reset production after a transient bug.
+- Claim the public GitHub Actions inspect workflow can test live writes; it is read-only.
+
+## 17. Release and maintenance lifecycle
+
+### 17.1 Versioning
+
+`VERSION` stores a plain version such as `0.1.0`. `CHANGELOG.md` and `docs/releases/vX.Y.Z.md` record public, code-only changes.
+
+The **first formal release is `v0.1.0`**. Versioned tags use `vMAJOR.MINOR.PATCH`. The repository's release publisher runs only after a completed successful **push-triggered CI on `master`**, verifies the tested commit remains the current master SHA, checks the release notes exist, and refuses to move an existing tag to a different commit.
+
+The release process deliberately publishes **no novel or cover assets**.
+
+### 17.2 How to prepare a new version
+
+1. Implement and test code on a feature/fix branch.
+2. Update `VERSION` only when a new release is genuinely intended.
+3. Add a corresponding section to `CHANGELOG.md`.
+4. Add `docs/releases/vX.Y.Z.md` containing safe-to-publish notes.
+5. Open a PR; let Windows/Linux Python CI pass.
+6. Merge when authorised.
+7. Verify the **exact merged master SHA** passes CI.
+8. Verify the publisher creates the expected annotated tag and GitHub Release.
+9. Confirm no sensitive data was attached.
+
+If GitHub runners are queued, say that validation/release is **pending**, not successful. If the publisher fails after a tag is written, investigate the exact state before retrying; never force-move a release tag.
+
+### 17.3 Branch hygiene
+
+Past one-shot maintenance pruned merged and obsolete branches, leaving only `master` at the time of this documentation audit. A branch may still have technically unique history after a squash merge even when its changes are incorporated; use the **merged PR's exact recorded head SHA, current branch SHA and net diff** when deciding safety.
+
+**Operational advice:** Preserve any branch with unmerged useful changes, active PRs, ambiguous ancestry, altered SHA or protected status. Do not repurpose the historical `prune-reviewed-branches.yml` as a broad recurring deletion job. Delete only branches specifically reviewed and proven redundant.
+
+## 18. Operational failure reference
+
+| Symptom / message | Likely condition | Safe first action |
+|---|---|---|
+| `Dataset is not private` | Wrong HF repo, insufficient access or public dataset | Verify repository ID, token permissions and private flag; do not write |
+| `data/library.json` missing while `data/` contains files | Orphaned/unrecognised dataset | Stop; inspect and back up rather than initialising blindly |
+| `CONFLICT: title exists...` | Ambiguous title/author matching | Review identities and source metadata manually |
+| `CONFLICT: multiple local ZIPs...` | Two files target one stable ID | Remove the duplicate from that import batch after review |
+| `UNCHANGED` despite a user complaint | Plan verifies same source bytes/metadata, but complaint may concern reader/app | Inspect reader behaviour; do not force a full dataset reset |
+| `UPDATE` for same ZIP | EPUB or metadata differs, or matching remote artifact could not be verified | Inspect plan and preserve personal data; selective repair may be correct |
+| `Local ZIP changed after preview` | Input changed while awaiting approval | Re-run preview on the final ZIP; no blind commit |
+| `Dataset changed since preview` | Concurrent writer or app updated dataset | Re-fetch and re-preview; do not rebase the old approved plan |
+| `Remote identity changed since planning` | Current catalogue no longer safely matches original plan | Stop and review ID/title/author; avoid creating duplicates |
+| Missing EPUB with matching original ZIP | Corrupt/incomplete remote state | Let reconciling uploader replace only the EPUB and catalogue when safe |
+| Cover `MISSING` | Cover has no matching existing book | Import the novel first or correct its source URL |
+| Cover `CONFLICT` | Ambiguous title/URL or unexpected coverPath | Resolve identity; no partial writes should occur for a conflicted plan |
+| Cover 429 with long wait | HF commit quota exhausted | Stop, let quota recover externally, re-run same ZIP later |
+| Cover batch N fails after earlier batches | Partial completion across commits | Re-preview and resume, preserving already committed earlier batches |
+| User cannot see uploaded cover | Reader or gateway does not yet serve `coverPath` properly | Inspect reader project; controller storage alone is not UI display |
+| Genre repair reports missing sources | Historical GitHub artifacts expired or inaccessible | Diagnose token/artifact availability; never guess genres |
+| `NOVEL_LIBRARY_ACTIONS_TOKEN` missing | Cross-repository artifact permission not configured | Configure appropriately if the user wants genre/cover artifact workflows |
+| HF cache symlink warning on Windows | Cache is functional but may use extra space | Treat as cosmetic; launcher may suppress warning |
+| Reset preview lists many files | All of `data/` will be affected by full reset | Cancel unless the user explicitly intends full backup-first deletion |
+| Reset refused because remote SHA changed | Concurrent changes during backup/approval | Keep backup and re-evaluate the new dataset revision |
+| CI queued | Hosted GitHub runner scheduling delay | Check run state; never claim success while queued |
+| CI green but live operation fails | Differences between mock and real HF behaviour | Debug against disposable private test dataset, not production |
+| Release tag absent | Release workflow not yet completed or failed | Check master CI and publisher run; do not create misleading links |
+
+### 18.1 Information to gather when debugging
+
+Prefer a **sanitised** report containing:
+
+1. Which command or workflow was invoked and with what *nonsecret* flags.
+2. Whether it was preview or apply mode.
+3. Approximate number of novels/covers affected, not private titles.
+4. The sanitized error class and stable code/message.
+5. Whether a remote commit was confirmed before the error.
+6. The repository branch/commit SHA (GitHub code only).
+7. Relevant test case names and CI platform/version.
+8. Whether the issue reproduces on a synthetic private test dataset.
+
+Do not request private user content when a synthetic fixture or count-only report is enough.
+
+### 18.2 Order of troubleshooting
+
+```text
+Is the action read-only or mutating?
+       |
+       +-- Read-only --> confirm repo identity, token, schema, revision
+       |                     |
+       |                     +-- fail --> inspect error safely; no write needed
+       |
+       +-- Mutating  --> verify explicit authorisation, backup needs,
+                           target privacy, preview and current revision
+                                  |
+                                  +-- identity/metadata ambiguity --> stop
+                                  |
+                                  +-- remote drift --> re-preview
+                                  |
+                                  +-- partial success --> reconcile, do not reset
+                                  |
+                                  +-- genuine code regression --> reproduce offline,
+                                                               add test, fix in PR,
+                                                               confirm CI
+```
+
+## 19. Security, privacy and threat model
+
+### 19.1 Assets to protect
+
+- Private novel EPUBs and original ZIP archives.
+- Cover image files and manifests where provenance or licensing matters.
+- Catalogue entries, source identifiers and any user-managed metadata.
+- HF credentials and GitHub Actions cross-repository tokens.
+- Backup snapshots and private CSV reports.
+- Reader-facing links between stable IDs and stored assets.
+- The ability to recover from failed operations without erasing a library.
+
+### 19.2 Risks and implemented mitigations
+
+| Risk | Mitigation | Remaining concern |
+|---|---|---|
+| Accidental full cloud deletion | No public clear Action; local verified-backup reset with confirmations | The local reset remains deliberately destructive |
+| Public exposure of private data | HF private dataset checks; private backup destination; suppressed public workflow logs | CLI output/files may contain titles; users must not publish them |
+| Unexpected local archive contents | Size/count/expanded-data/CRC checks and traversal rejection | New ZIP-consuming code paths need their own safeguards |
+| Duplicate/wrong book selection | Conservative ID/title/author match, cover URL match, conflict abort | Changed title+EPUB and ambiguous metadata still require manual review |
+| Concurrent writes | Pinned revisions and `parent_commit` | Independent writers can race; app-level locking is not global |
+| Silent corruption reported unchanged | Separate ZIP+EPUB+metadata checks | Full remote verification costs network bandwidth |
+| HF quota exhaustion | Cover batching, bounded 429 retry, stop/resume | No guarantee of unlimited commits or free capacity |
+| Supply-chain drift | Tested constraints and pinned Actions commits | Dependency updates still require review |
+| Public CI leaking secrets | Environment secrets, no private artifacts, counts-only reports | Logs and exception handlers must remain conservative |
+| Uncertainty after failed commit | Stop on malformed response/ambiguous outcome, re-preview | A failure can occur after a successful remote commit |
+
+### 19.3 Privilege separation
+
+A reader may require only read access through its own gateway, whereas a storage controller doing uploads needs scoped write access, a backup workflow may need write access to a different private repo, and historical genre repair needs GitHub artifact read access. Do not use an all-powerful token as a shortcut if a narrower token is possible.
+
+### 19.4 Threat model limits
+
+This controller is not a sandbox for executing untrusted novels or external binaries, an antivirus, or a comprehensive media parser. ZIP and image byte checks mitigate known malformed-file cases but cannot prove an input is harmless. Never run scripts embedded in novel downloads.
+
+## 20. Concrete change playbooks for future agents
+
+### 20.1 General development procedure
+
+**Before editing:**
+
+- Read the latest owner request, this file, README, related code/tests and relevant workflows.
+- Fetch current `master` SHA and open PRs, and confirm the requested work has not already been merged.
+- Identify exactly which component owns the requested behaviour (retriever, controller, reader, dataset).
+- Write down invariants, affected file formats, privacy implications and failure/rollback semantics.
+- Decide whether a live dataset operation is necessary. Default: **no**.
+
+**During implementation:**
+
+- Work on a clearly named separate branch for nontrivial changes.
+- Make the smallest compatible change that fixes the problem.
+- Keep mock/offline behaviour and existing working paths intact.
+- Add regression tests for the original failure and at least one negative safety case.
+- Avoid broad refactors, incompatible schema changes and unrelated workflow edits.
+- Never put credentials, private archives or real catalogue exports into commits or PRs.
+
+**Before merging:**
+
+- Verify the changed branch head and current base SHA.
+- Run compile checks and complete Python tests; require the intended CI matrix to pass.
+- Read the PR diff, including any deleted security guards or changed GitHub Actions permissions.
+- Distinguish simulated integration from genuine live HF testing in your report.
+- Merge only when permitted by the owner's current request.
+- Check the merged commit's CI run rather than relying solely on pre-merge tests.
+- Update README, docs, version and release notes as applicable.
+
+**After merging:**
+
+- Report PR/commit, tested combinations and any remaining uncertainty.
+- Do not claim an automation, tag, release or branch deletion succeeded before checking GitHub's actual result.
+- Keep all HF production state intact unless a clearly scoped user-approved action was actually executed.
+
+### 20.2 Adding a new local management command
+
+1. Specify whether it is read-only, local-only, write-to-private-HF or destructive.
+2. Add the Python command to `cli.py` or a dedicated module as appropriate.
+3. Apply catalogue validation and privacy checks.
+4. If it writes, support preview-first and optimistic concurrency.
+5. Reuse safe path handling, streaming reads and report output.
+6. Write unit and integration tests.
+7. Add a Windows launcher only when the feature works.
+8. Update `00_storage_menu.cmd` and README; do not show placeholders as functional.
+
+### 20.3 Adding single-novel deletion (not yet implemented)
+
+This would be a **new design task**, not a simple alias for `reset.py`:
+
+- Define the owner and approval workflow, including what “delete” means for app and backup state.
+- Identify the exact stable ID and all its referenced assets.
+- Detect other references, shared data and potential orphan paths.
+- Preserve personal data until an explicit deletion request and suitable backup/recovery plan exist.
+- Preview the exact deletion set and require deliberate confirmation.
+- Commit catalogue and file removals atomically, with a revision guard.
+- Test that no unrelated novel is touched.
+- Verify reader cache/synchronisation effects in the separate app project.
+
+Do not implement it without explicit task approval.
+
+### 20.4 Adding full restore (not yet implemented)
+
+A restore workflow would need to validate the backup manifest, source identity, target dataset privacy, completeness, exact paths and SHA-256s before committing. It must define conflict handling for a nonempty target, rollback strategy, and revision checks. A mere download of `library.json` is not a full restore.
+
+### 20.5 Supporting new downloader formats
+
+- Obtain a synthetic sample with the same directory/manifest structure but without copyrighted content.
+- Keep the original NovelFull-compatible format working.
+- Add schema/size validation and cross-repo compatibility tests.
+- Never guess identity or tags based on an unfamiliar manifest.
+- Decide whether source metadata fields belong in the source-managed or user-managed layer.
+- Coordinate any format changes with the separate Novel_Library repository.
+
+### 20.6 Optimising remote downloads
+
+Do not skip EPUB hashing to save bandwidth; that would recreate a known integrity defect. Consider only optimisations with verified equality semantics, such as a trustworthy immutable content digest source, caching keyed to a pinned revision, and a fallback path when a digest is unavailable. Cover and ZIP integrity must remain defensible.
+
+### 20.7 Changing GitHub Actions
+
+- Verify manual dispatch versus automatic triggers.
+- Limit repository permissions and secrets by job/step.
+- Preserve private catalogue/output confidentiality.
+- Make apply intent explicit, never a default side effect.
+- Avoid separate preview/apply runs silently relying on a stale approval plan.
+- Confirm no change can delete the dataset without verified backup and explicit consent.
+- Pin reviewed Action commits; test the resulting workflow behavior.
+- Do not repurpose release/branch-pruning workflows for unrelated automation.
+
+## 21. Design decisions and historical lessons
+
+These are implementation lessons preserved from the repository history, not a list of currently open bugs:
+
+1. **A ZIP can match while its EPUB is corrupted.** Hash ZIP, EPUB and verify metadata before `UNCHANGED`.
+2. **Per-cover commits can hit quotas.** Group small updates into atomic, revision-guarded batches.
+3. **A failed later batch must be resumable.** Re-preview the current dataset, do not blindly restart all commits or reset the library.
+4. **Manual preview and application can drift.** Windows launchers use one-process confirmations; application still checks dataset revisions.
+5. **An empty dataset is not the same as a missing catalogue over unknown existing data.** Guard initialisation.
+6. **Source metadata and reader personal metadata coexist.** Preserve user fields and nonempty restored genres.
+7. **Public GitHub workflows are the wrong place for detailed private catalogue output.** Use count-only logs and private HF report destinations.
+8. **Backup-free clearing is unacceptable.** Use local verified-backup-first resets.
+9. **Historical artifact data is incomplete and expires.** Genre repair must be additive and conservative.
+10. **Mocks and Linux tests alone are not sufficient.** Keep both Windows and Linux Python CI and clearly separate live HF smoke testing.
+11. **CI queue does not imply CI success.** Check final job conclusions and exact tested commit before publishing versioned releases.
+12. **Squash-merged branches can have unique commit history but no unique useful changes.** Evaluate merged PR evidence before branch deletion.
+
+## 22. Known limitations and non-implemented functionality
+
+As observed in current source and documentation:
+
+- Full single-book cloud deletion is not implemented in this repository.
+- Automatic single-book restoration is not implemented.
+- Automatic full dataset restoration is not implemented.
+- Placeholder launcher `05` is not a complete whole-library integrity scanner.
+- `cli status` only compares EPUB-derived IDs; it is not full remote byte verification.
+- A multi-novel import or multi-batch cover job can partially succeed across commits.
+- Novel matching cannot reliably recognise every simultaneous title/EPUB rename.
+- Source metadata and personal state require coordination with the separately deployed reader.
+- Uploading a cover to private storage does not itself guarantee the reader renders that cover.
+- The reader's web-upload size limits and deployment configuration are outside this repository.
+- The genre restoration workflow depends on external historical artifacts and cross-repository token configuration.
+- There is no guarantee that expired historical GitHub artifacts remain available.
+- Real Hugging Face API write behaviour has not been fully established by the offline CI suite.
+- The project uses a version 1 catalogue; no independently versioned schema migration framework is implemented.
+- There is no general-purpose central scheduler, distributed locking service or global transaction coordinator.
+
+**Do not silently label any of these as implemented.** If a user requests one, scope it as a separate feature with tests, safety analysis and documentation.
+
+## 23. Glossary
+
+| Term | Precise meaning here |
+|---|---|
+| **Source ZIP** | Original pre-packaged local novel archive, generally produced by Novel_Library |
+| **EPUB** | Reader-compatible publication container extracted from a ZIP and stored independently |
+| **Catalogue** | Version 1 `data/library.json` mapping stable book IDs to metadata and blob paths |
+| **Stable book ID** | 24-character lowercase hex key, originally derived from EPUB SHA-256 for a new book; preserved on later safe matches |
+| **HF dataset** | Private Hugging Face Git repository storing the library, separate from the web reader |
+| **Remote revision** | Full Hugging Face repository commit SHA used to pin reads and guard writes |
+| **Optimistic concurrency** | Rejecting or stopping when `parent_commit`/expected revision no longer matches |
+| **Source-managed metadata** | Title, author, genres, source URL, chapter count and similar fields derived from a novel package |
+| **Personal metadata** | Reader/user-owned information such as progress, personal tags, ratings, reviews and notes |
+| **`sourceTags`** | Source-site genres/categories extracted or historically restored |
+| **`personalTags`** | User-defined app tagging metadata; distinct from `sourceTags` |
+| **`coverPath`** | Catalogue metadata pointer to an image under the book's private dataset directory |
+| **`NEW`** | Safely new novel or cover target |
+| **`UPDATE`** | Safe matched target needs a change |
+| **`UNCHANGED`** | Required digest, link and metadata checks pass for the relevant operation |
+| **`LINK`** | Identical existing cover bytes need only a metadata pointer |
+| **`MISSING`** | A cover has no matching existing novel |
+| **`CONFLICT`** | Identity/path ambiguity requiring human review; no unsafe writes |
+| **CRC** | ZIP member integrity check against the ZIP's stored checksum |
+| **429** | Hugging Face rate/quota response; cover uploader only retries short bounded Retry-After once |
+| **PR** | GitHub pull request, used for review and CI before merging |
+| **Offline smoke test** | End-to-end execution against a synthetic private Hub simulation rather than real HF servers |
+| **Private backup dataset** | Separate HF dataset destination for private snapshots and sensitive CSV reports |
+
+## 24. Final agent checklist
+
+Before claiming the Storage Controller task is finished, check each applicable box:
+
+- [ ] I changed only this repository (unless the owner explicitly authorised another).
+- [ ] I based decisions on the latest source and the specific relevant tests.
+- [ ] I distinguished implemented facts from proposals and historical commentary.
+- [ ] I have not changed or accessed the production private dataset unexpectedly.
+- [ ] I preserved novel IDs, catalogue schema, personal data and existing source genres.
+- [ ] I did not weaken private-dataset validation, archive checks or revision guards.
+- [ ] I did not reintroduce backup-free deletion or uncontrolled release/cleanup automation.
+- [ ] I maintained preview-only defaults and explicit write approval.
+- [ ] I tested negative cases, partial failures and safe reruns where relevant.
+- [ ] I kept novels, covers, personal data and all secrets out of public commits and logs.
+- [ ] I verified the actual CI results for the exact branch/commit, not just the queued workflow.
+- [ ] I have not claimed real HF live testing when only mock integration was performed.
+- [ ] I kept READMEs, release notes and cross-repository contracts consistent with changed code.
+- [ ] I supplied the actual merged PR/commit/release link only after verifying it exists.
+
+---
+
+### Provenance and update policy
+
+This handbook was compiled from **the current contents of this GitHub repository**, including `taiyou_storage/*.py`, test suites, workflows, README files and the verified `v0.1.0` release. It is intentionally written with examples containing *synthetic* book names and data. It does **not** disclose the contents of the actual private Hugging Face dataset.
+
+**Keep it current.** Any PR that changes a key path, data contract, CLI argument, security boundary, workflow, test architecture or release procedure should assess and update this document alongside the code. The code is authoritative when this explanatory file becomes stale.
