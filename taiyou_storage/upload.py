@@ -18,7 +18,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 from .core import DEFAULT_REPO, normalized_title, sha256_file, validate_catalogue
-from .paths import book_dir, legacy_dir, readable_dir
+from .paths import book_dir, legacy_dir, readable_dir, folder_from_epub_path
 
 MAX_ZIP = 120 * 1024 * 1024
 MAX_EPUB = 120 * 1024 * 1024
@@ -260,9 +260,10 @@ def apply_item(api, repo: str, token: str, item: dict, *,
         if desired_id != item["id"]:
             raise UploadError("Remote identity changed since planning; re-run plan")
         directory = book_dir(entry) if entry else item.get("directory", legacy_dir(desired_id))
-        if (directory != legacy_dir(desired_id) and
-                not directory.startswith(legacy_dir(desired_id) + " - ")):
-            raise UploadError("Invalid planned directory")
+        try:
+            folder_from_epub_path(desired_id, directory + "/source.epub")
+        except ValueError as exc:
+            raise UploadError("Invalid planned directory") from exc
         archive = f"{directory}/original.zip"
         epub_path = f"{directory}/source.epub"
         if entry and (entry["epubPath"] != epub_path or
