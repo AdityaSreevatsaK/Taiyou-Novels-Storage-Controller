@@ -20,6 +20,7 @@ def readable_label(title: str) -> str:
         raise ValueError("Novel title must be a string")
     title = unicodedata.normalize("NFKC", title)
     title = re.sub(r"[^\w .,!'()+&-]", " ", title, flags=re.UNICODE)
+    title = re.sub(r"\.{2,}", ".", title)
     title = " ".join(title.split()).strip(" .")
     title = title[:96].rstrip(" .")
     return title if title else "Untitled"
