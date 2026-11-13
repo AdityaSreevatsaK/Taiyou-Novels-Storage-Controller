@@ -15,6 +15,7 @@ import time
 
 from .core import validate_catalogue
 from .covers import CoverError, EXTENSIONS, make_plan, match_book
+from .paths import book_dir, COVER_SUFFIXES
 
 DEFAULT_BATCH_SIZE = 20
 MAX_BATCH_SIZE = 40
@@ -129,13 +130,13 @@ def commit_cover_batch(api, repo: str, token: str, items: list[dict],
             book, _ = match_book(books, cover)
             if not book or book["id"] != refreshed["book_id"]:
                 raise CoverError("Remote book identity changed; no commit made")
+            directory = book_dir(book)
             destination = refreshed["destination"]
-            if destination != f"data/novels/{book['id']}/cover{cover.extension}":
+            if destination != f"{directory}/cover{cover.extension}":
                 raise CoverError("Unexpected cover destination; refusing overwrite")
             old_path = book["metadata"].get("coverPath")
-            if old_path and (not isinstance(old_path, str) or
-                    not old_path.startswith(f"data/novels/{book['id']}/cover.") or
-                    PurePosixPath(old_path).suffix.lower() not in EXTENSIONS):
+            if old_path and old_path not in {
+                    f"{directory}/cover{suffix}" for suffix in COVER_SUFFIXES}:
                 raise CoverError("Unexpected old cover path; refusing overwrite")
             book["metadata"]["coverPath"] = destination
             if refreshed["status"] != "LINK":
