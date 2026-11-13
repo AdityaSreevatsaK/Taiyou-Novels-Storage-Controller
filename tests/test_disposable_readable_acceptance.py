@@ -13,11 +13,11 @@ from unittest.mock import patch
 from types import SimpleNamespace
 
 from scripts.verify_disposable_folder_migration import (
-    BOOK_ID, OTHER_ID, TEST_REPO, cleanup_fixture, create_fixture,
+    BOOK_ID, OTHER_ID, THIRD_ID, FOURTH_ID, TEST_REPO, cleanup_fixture, create_fixture,
     run, validate_test_repo,
 )
 from taiyou_storage.core import validate_catalogue
-from taiyou_storage.migrate_folders import plan_migration
+from taiyou_storage.migrate_folders import group_migration_batches, plan_migration
 from taiyou_storage.paths import book_dir, legacy_dir
 
 
@@ -25,8 +25,8 @@ class DisposableRunnerOfflineTests(unittest.TestCase):
     def test_fixture_uses_only_fictional_books_and_valid_archives(self):
         catalogue, data = create_fixture()
         self.assertEqual(validate_catalogue(catalogue), catalogue["books"])
-        self.assertEqual({book["id"] for book in catalogue["books"]}, {BOOK_ID, OTHER_ID})
-        self.assertEqual(len(data), 10)
+        self.assertEqual({book["id"] for book in catalogue["books"]}, {BOOK_ID, OTHER_ID, THIRD_ID, FOURTH_ID})
+        self.assertEqual(len(data), 19)
         for book in catalogue["books"]:
             self.assertEqual(book["metadata"]["author"], "Fictional Author")
             self.assertIn(book["epubPath"], data)
@@ -41,6 +41,8 @@ class DisposableRunnerOfflineTests(unittest.TestCase):
         self.assertIn("data/personal/progress/" + BOOK_ID + ".json", data)
         self.assertIn("data/personal/reviews/" + BOOK_ID + ".json", data)
         self.assertIn("data/personal/collections.json", data)
+        self.assertIn("data/personal/reviews/" + THIRD_ID + ".json", data)
+        self.assertIn("data/personal/progress/" + FOURTH_ID + ".json", data)
         self.assertEqual(json.loads(data["data/personal/progress/" + BOOK_ID + ".json"])["progress"], 73)
 
     def test_only_legacy_book_is_planned_for_migration(self):
@@ -48,6 +50,8 @@ class DisposableRunnerOfflineTests(unittest.TestCase):
         items = {item["id"]: item for item in plan_migration(catalogue["books"], set(data))}
         self.assertEqual(items[BOOK_ID]["status"], "MIGRATE")
         self.assertEqual(items[OTHER_ID]["status"], "ALREADY_READABLE")
+        self.assertEqual(items[THIRD_ID]["status"], "MIGRATE")
+        self.assertEqual(items[FOURTH_ID]["status"], "MIGRATE")
         old = legacy_dir(BOOK_ID)
         moves = items[BOOK_ID]["moves"]
         self.assertEqual(len(moves), 4)
@@ -55,6 +59,15 @@ class DisposableRunnerOfflineTests(unittest.TestCase):
         self.assertTrue(all(dst.startswith(items[BOOK_ID]["new"] + "/") for _, dst in moves))
         self.assertNotEqual(book_dir(catalogue["books"][1]), legacy_dir(OTHER_ID))
         self.assertNotIn("data/library.json", [src for src, _ in moves])
+        groups = group_migration_batches(
+            [items[BOOK_ID], items[THIRD_ID], items[FOURTH_ID]],
+            max_books=2, max_operations=30)
+        self.assertEqual([len(group) for group in groups], [2, 1])
+        self.assertEqual({item["id"] for item in groups[0]}, {BOOK_ID, THIRD_ID})
+        target = items[FOURTH_ID]["new"] + "/stale.jpg"
+        collided = {row["id"]: row for row in plan_migration(
+            catalogue["books"], set(data) | {target})}
+        self.assertEqual(collided[FOURTH_ID]["status"], "CONFLICT")
 
     def test_only_single_precreated_dataset_is_ever_permitted(self):
         self.assertEqual(validate_test_repo(TEST_REPO), TEST_REPO)
