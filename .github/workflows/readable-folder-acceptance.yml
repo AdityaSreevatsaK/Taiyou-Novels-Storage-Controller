@@ -91,7 +91,7 @@ jobs:
       - name: Install pinned dependencies
         run: python -m pip install -r requirements.txt
       - name: Perform REAL create, read, migrate, compare and delete against newly created PRIVATE dataset only
-        run: python scripts/verify_disposable_folder_migration.py
+        run: python -m scripts.verify_disposable_folder_migration
       - name: Record verified live acceptance
         run: |
           echo 'PASS: real private disposable dataset migrated with immutable-ID safety, file digests, catalogue, cover, ZIP, personal sidecars and stale-commit conflict.' >> "$GITHUB_STEP_SUMMARY"
