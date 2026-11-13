@@ -55,6 +55,10 @@ py -m taiyou_storage.upload novels --interactive   # Preview and confirm
 py -m taiyou_storage.upload novels --apply         # Explicit noninteractive upload
 ```
 
+**New uploads now use readable Hugging Face folders by default:** `data/novels/<id> - <sanitised-title>/`. Existing novels keep their catalogue-declared path, whether ID-only or readable. Use `--legacy-new-folders` to opt out for an individual run. Your existing progress, personal metadata and stable IDs do not change.
+
+For existing ID-only folders, see the [migration guide](docs/READABLE_FOLDER_MIGRATION.md). The full production migration is a separate, backup-first manual workflow. **Do not run it until both the reader deployment and disposable private HF integration checks are confirmed.**
+
 An existing novel is matched by EPUB-derived ID or by an unambiguous normalised title **and** author. A successful match preserves the stable novel ID and app/user metadata, including progress, ratings, notes and personal tags. Missing genres in an older ZIP do not erase nonempty existing source genres.
 
 A novel is labelled **UNCHANGED** only when its original ZIP, stored EPUB and source-managed catalogue metadata all agree. Changed binaries and the catalogue are reconciled in a single revision-guarded commit. The preview hashes only matching remote novels from your current local batch, not the whole library.
