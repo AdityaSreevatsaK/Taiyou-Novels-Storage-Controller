@@ -31,10 +31,18 @@ def plan_migration(books: list[dict], paths: set[str]) -> list[dict]:
         old_dir = book_dir(book)
         dest_dir = readable_dir(book_id, str(book["metadata"].get("title") or "Untitled"))
         current_files = sorted(p for p in paths if p.startswith(old_dir + "/"))
+        unsafe_members = any(
+            "\\" in path or any(part in ("", ".", "..") for part in path.split("/"))
+            for path in current_files)
+        destination_occupied = any(path.startswith(dest_dir + "/") for path in paths)
         status, reason = "MIGRATE", ""
         moves = []
         if old_dir != legacy_dir(book_id):
             status, reason = "ALREADY_READABLE", "Existing readable name remains stable"
+        elif unsafe_members:
+            status, reason = "CONFLICT", "Unsafe file path under original directory"
+        elif destination_occupied:
+            status, reason = "CONFLICT", "Readable destination directory is already occupied"
         elif not current_files or book["epubPath"] not in current_files:
             status, reason = "CONFLICT", "Required source EPUB missing"
         elif (book.get("archivePath") and book["archivePath"] not in current_files):
