@@ -228,8 +228,11 @@ def run() -> int:
         result = api.create_commit(
             repo_id=repo, repo_type="dataset", token=token,
             parent_commit=current_sha, commit_message="Seed synthetic mixed-format library",
+            # Bytes (rather than io.BytesIO) let huggingface_hub negotiate
+            # Xet transfer; the HTTP fallback for buffered objects can fail
+            # on datasets configured for Xet-backed file storage.
             operations=[CommitOperationAdd(path_in_repo=path,
-                                           path_or_fileobj=io.BytesIO(data))
+                                           path_or_fileobj=data)
                         for path, data in fixtures.items()],
         )
         current_sha = result.oid
