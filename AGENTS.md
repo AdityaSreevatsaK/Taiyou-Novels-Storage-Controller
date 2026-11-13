@@ -487,3 +487,383 @@ Two novels in a batch are two commits, not one combined transaction. If the firs
 
 This reconciler pattern is a core design principle throughout the repository.
 
+
+## 8. Cover import: input contract and validation
+
+### 8.1 Supported inputs and sources
+
+`covers.read_covers_zip` accepts:
+
+- A ZIP file directly containing a manifest and the referenced images.
+- The Novel Retriever's `Downloaded_Covers.zip` or `novel-cover-images.zip`.
+- A GitHub Actions outer ZIP containing a single nested cover ZIP.
+- A directory containing **exactly one** ZIP (not a directory full of unrelated archives).
+
+The manifest must include exactly one file whose basename is `covers_manifest.json`. An image record is conceptually:
+
+```json
+{
+  "title": "Synthetic Example Novel",
+  "website": "NovelFull",
+  "source_url": "https://example.org/novel/fictional",
+  "cover_file": "NovelFull/synthetic-example.jpg"
+}
+```
+
+The parser supports several manifest shapes: a single record object; an array; an object with one of `covers`, `novels`, `items` or `entries` lists; and the downloader's `results` format. For the `results` format, **only** rows with status `downloaded` or `skipped` are considered for importing. Rows with status `failed` are ignored rather than treated as missing-image failures. See `docs/covers_manifest.example.json` for a bundled illustration.
+
+The `cover_file` is a path **inside** the ZIP, not a local filesystem path or an instruction to fetch an Internet URL. It must be relative, without backslashes or `..` traversal. Each referenced filename may appear at most once in the accepted manifest.
+
+### 8.2 Cover archive and image limits
+
+| Constraint | Implemented value |
+|---|---|
+| Total cover ZIP file size | 512 MiB |
+| Nested cover ZIP declared expanded member size | 512 MiB |
+| Image count / manifest records | Up to 2,000 |
+| Manifest JSON uncompressed size | 8 MiB |
+| Individual image size | 12 MiB |
+| Sum of referenced uncompressed image sizes | 350 MiB |
+| Supported extensions | `.jpg`, `.jpeg`, `.png`, `.webp` |
+| Canonical remote extensions | `.jpg`, `.png`, `.webp` |
+
+`covers.check_image` verifies basic file signatures and ending markers. It is a **lightweight byte-format sanity check**, not image decoding or malware scanning. For example, JPEG is required to begin with its expected marker and end with the JPEG end-of-image marker. Do not overstate the current image-verification strength.
+
+### 8.3 Matching existing novels
+
+`covers.source_key` normalises valid HTTP(S) source URLs for comparison by:
+
+- Lowercasing the host and removing a leading `www.`.
+- Keeping the source path (apart from a trailing slash) and query string.
+- Rejecting unrecognised schemes or URLs without a valid host.
+
+This normaliser is **not identical** to the one in `genre_repair.py`. Do not automatically unify them: identity and historical-artefact matching rules need deliberate, regression-tested decisions.
+
+`covers.match_book` tries, in order:
+
+1. Find a **unique exact normalised source URL**.
+2. Reject if the URL resolves to multiple catalogue books.
+3. Reject if a URL-matched book conflicts with another book matching the title.
+4. If the URL does not match, permit a **unique normalised title** only if the book does not already specify a conflicting source URL.
+5. A novel absent from the catalogue is `MISSING` and cannot receive a cover.
+6. Multiple books with the same title are a `CONFLICT` without a safe URL match.
+
+The manifest's `website` field is **not** an author field and must never be used to disambiguate title collisions as though it were an author.
+
+### 8.4 Cover planning statuses
+
+`covers.make_plan` returns:
+
+| `status` | Meaning | User-visible action |
+|---|---|---|
+| `NEW` | No matching remote destination image and no existing cover link | Upload image and link it |
+| `UPDATE` | Existing linked/destination cover bytes differ, or other safe replacement needed | Update destination and catalogue link |
+| `LINK` | Identical destination image already exists but metadata has no matching `coverPath` | Update catalogue link without re-uploading bytes |
+| `UNCHANGED` | Identical remote image and `coverPath` already point to it | Skip |
+| `MISSING` | Input cover does not match any catalogue book | Report and skip; do not create book |
+| `CONFLICT` | Ambiguous/inconsistent input or existing path | Abort entire upload before any commits |
+
+Two cover records targeting the same book are a conflict, even if they have different image names. Missing covers are not silently created as new novels.
+
+### 8.5 Cover preview CLI
+
+```powershell
+py -m taiyou_storage.covers "C:\Downloads\Downloaded_Covers.zip"
+py -m taiyou_storage.covers "C:\Downloads\Downloaded_Covers.zip" --interactive
+py -m taiyou_storage.covers "C:\Downloads\Downloaded_Covers.zip" --apply
+py -m taiyou_storage.covers "C:\Downloads\Downloaded_Covers.zip" --batch-size 20 --commit-pause 2
+```
+
+By default:
+
+1. Parse/validate all cover images.
+2. Read the private catalogue.
+3. Match covers and identify *only* relevant already-existing destinations.
+4. Hash those remote images in streamed 1 MiB chunks.
+5. Recompute `NEW`/`UPDATE`/`LINK`/`UNCHANGED`/`MISSING`/`CONFLICT` statuses.
+6. Write a CSV report to `reports/cover-upload-plan.csv`.
+7. Display the plan and stop without writing to Hugging Face.
+
+With `--interactive`, prompt for exact `YES` in the same process. With `--apply`, opt into writing without an interactive prompt.
+
+Before the first cover write, the CLI locally saves the original `data/library.json` under `backups/cover-upload-library-<UTC>-<SHA>.json`. This is a **catalogue backup**, not a guaranteed full dataset backup of every EPUB and cover.
+
+The Windows `10_upload_covers.cmd` launcher handles paths with surrounding pasted quotes, can discover common cover ZIP paths, suppresses the harmless Windows HF cache-symlink warning, and calls `--interactive`.
+
+## 9. Cover batching, concurrency and recovery
+
+### 9.1 Why cover batching exists
+
+Uploading one cover per Hugging Face commit led to repository-commit quota issues (HTTP 429) for sizeable libraries. `cover_batches.py` groups cover uploads so several images and their matching `library.json` edits share **one commit**. The default batch size is `20` covers, the maximum count is `40`, and the default byte budget is `48 MiB` per batch.
+
+`group_batches(items, batch_size, max_bytes)` considers both image count and total covered bytes when building groups. This grouping is a runtime safety/performance decision, not a promise that an entire collection will always use an exact number of commits.
+
+### 9.2 Transaction steps for one batch
+
+`commit_cover_batch(api, repo, token, items, expected_sha)`:
+
+1. Confirms the target dataset is private.
+2. Confirms the current remote SHA matches the expected revision.
+3. Downloads and validates the current catalogue at that revision.
+4. Rematches the batch's cover images to the **current** catalogue and checks for missing/ambiguous records.
+5. Downloads and hashes only destination covers that already exist.
+6. Builds a refreshed plan and refuses changed IDs or destinations.
+7. Validates the existing `coverPath` stays within the correct novel directory and has a permitted extension.
+8. Adds only changed images; metadata-only `LINK` operations do not need a binary upload.
+9. Adds a single updated `data/library.json` to the same commit as the changed images.
+10. Calls `api.create_commit(..., parent_commit=expected_sha)` and reads the new revision SHA.
+
+If every cover is truly unchanged, the function returns without committing.
+
+### 9.3 Quota and concurrency behaviour
+
+- **HTTP 429:** inspect `Retry-After`. A short, valid delay of up to **30 seconds** may be honoured **once**.
+- **Long or unknown 429:** stop cleanly; do not retry indefinitely or sleep for an hour in CI.
+- **HTTP 409/412:** treat as concurrent remote modification and stop rather than blindly overwriting.
+- **Unknown response/commit outcome:** if the commit SHA is missing or malformed, stop, because the operation might already have succeeded.
+- **Revision changed while waiting to retry:** stop and re-preview rather than treating a previous plan as current.
+- **Pause between successful batches:** `upload_batches` defaults to **2 seconds**, configurable from 0 to 60.
+
+### 9.4 Recovery after a partially completed batch sequence
+
+Imagine 89 covers, with the first 36 imported successfully and an error on a later commit. The correct action is **not to reset the dataset**. Reuse the **same cover ZIP**:
+
+1. Rerun the preview on the current private revision.
+2. Previously imported covers should appear `UNCHANGED` if bytes and catalogue links match.
+3. Remaining covers should appear `NEW`, `UPDATE` or `LINK`.
+4. Resolve any conflict or changed catalogue identity before writing.
+5. Restart the remaining safe batches.
+
+This behaviour has dedicated regression tests in `tests/test_cover_batches.py` and end-to-end synthetic coverage in `tests/test_smoke_integration.py`. Do not regress the ability to resume after an interrupted sequence.
+
+## 10. Read-only and local catalogue utilities
+
+`taiyou_storage.cli` is a command-driven management CLI. It reads the private catalogue and writes **local output files** but does not edit the private cloud dataset.
+
+```powershell
+py -m taiyou_storage.cli list
+py -m taiyou_storage.cli conflicts
+py -m taiyou_storage.cli backup
+py -m taiyou_storage.cli download
+py -m taiyou_storage.cli status --folder novels
+py -m taiyou_storage.cli --repo OWNER/PRIVATE-DATASET list
+```
+
+| CLI subcommand | Behaviour | Typical local output |
+|---|---|---|
+| `list` | Convert catalogue entries to a sorted CSV list | `reports/novels.csv` |
+| `conflicts` | Find exact and normalised-title duplicates with distinct IDs | `reports/conflicts.csv` |
+| `backup` | Download a revision-pinned copy of the catalogue only | `backups/library-<UTC>-<SHA>.json` |
+| `download` | Download available original novel ZIPs from listed catalogue entries | `downloads/data/novels/<id>/original.zip` plus `downloads/manifest.json` |
+| `status` | Derive EPUB hash IDs from local ZIPs and compare with current catalogue IDs | Prints `EPUB-ID-EXISTS` / `EPUB-ID-NEW` |
+
+`core.rows` sorts rows by normalised title, then ID. `core.conflicts` detects exact and normalised-title duplicate pairs. This is **reporting**, not automatic record deduplication.
+
+`core.local_epub_id` hashes the embedded EPUB. It does not compare an entire local ZIP to remote `original.zip` nor inspect actual remote EPUB byte equality. Its status output must not be misrepresented as a full integrity check.
+
+**Local download detail:** The `download` subcommand writes to a `.part` staging file, renames it when complete, hashes the resulting local archive and records its digest. As implemented it downloads each listed remote original ZIP when invoked; it is not a resumable sync engine guaranteed to skip already downloaded files.
+
+## 11. Full reset: destructive, local-only, verified-backup-first
+
+### 11.1 This is a dangerous administrative function
+
+`taiyou_storage.reset` can remove **all** files under `data/` of a chosen private Hugging Face dataset while preserving the HF repository itself and writing a valid empty `data/library.json`.
+
+It must **never** be used as an answer to:
+
+- A duplicate novel.
+- A broken cover image.
+- A single file that was downloaded onto the user's PC.
+- A partial batch upload.
+- A stale app cache.
+- One missing chapter.
+- A mismatch between the reader and the catalogue.
+
+The three placeholder launchers `05_verify_integrity.cmd`, `08_restore_novel.cmd` and `09_delete_novel.cmd` do **not** implement safer alternatives. Do not tell the user otherwise.
+
+### 11.2 Read-only preview
+
+```powershell
+py -m taiyou_storage.reset
+```
+
+The reset preview confirms private dataset access, records its current SHA, checks for `data/library.json`, selects a validated list of paths under `data/` and prints the affected paths. It performs no remote deletion and creates no backup until `--apply` is supplied.
+
+Although this preview is read-only for the cloud, it **prints paths**, which may contain private identifiers. Do not copy its output into a public GitHub Actions log or public issue.
+
+### 11.3 Full apply safety sequence
+
+```powershell
+py -m taiyou_storage.reset --apply
+```
+
+This operation:
+
+1. Requires `hf auth login` / an accessible Hugging Face token.
+2. Requires a **private** dataset and a valid SHA.
+3. Requires an interactive terminal; it cannot be driven by the ordinary GitHub CI.
+4. Requires the user to type the **full target dataset repository ID**.
+5. Rejects symlinked backup roots.
+6. Downloads **every validated path under `data/`** at the pinned SHA to `backups/before-reset-<UTC>-<SHA>/`.
+7. Generates a manifest with each file's size and SHA-256.
+8. Re-reads local saved files and verifies their sizes and SHA-256 digests.
+9. Requires a second exact confirmation: `ERASE <file_count> FILES <revision_prefix>`.
+10. Re-reads the remote dataset revision and file inventory; refuses if either changed.
+11. Submits a single revision-guarded HF commit deleting the selected `data/` paths **except** the catalogue, then replacing `data/library.json` with `{"version": 1, "books": []}`.
+12. Leaves files outside `data/` and the dataset repository itself intact.
+
+`reset.select_data_files` validates path shapes, rejects duplicates and unsafe traversal, and caps the affected file count at **5,000**. `reset.backup_data` uses staged `.part` writes and streamed hashing.
+
+### 11.4 Recoverability limitations
+
+A successful local backup is necessary but not equivalent to an implemented automated restore procedure. **No automatic full restore exists.** HF Git/LFS history may retain old blobs after reset, but it must not be relied upon as the sole backup strategy.
+
+**Agent rules:**
+
+- Never add a one-checkbox, no-backup clear workflow.
+- Never create a public GitHub Action that can delete the full HF dataset repository.
+- Never change reset from interactive to non-interactive just for convenience.
+- Never omit or weaken hash, path, revision or confirmation checks.
+- Never run reset against the user's private production dataset as part of testing.
+
+## 12. Manual GitHub Actions: inspection, backup, reports and covers
+
+### 12.1 General privacy rule
+
+This GitHub repository is public. GitHub Actions logs and artifacts can be visible to people who must **not** see the contents of the private novel dataset. All workflows with dataset access must treat both the novel files and the catalogue metadata as sensitive.
+
+`actions.py` is deliberately narrower than `reset.py`: it supports only `inspect`, `report` and `backup`. There is **no** `actions clear` command. The former no-backup cloud deletion workflow was removed after a production-readiness audit.
+
+### 12.2 `HF - Inspect library (read only)`
+
+Entrypoint:
+
+```bash
+python -m taiyou_storage.actions inspect
+```
+
+The workflow supplies `HF_TOKEN` from the GitHub secret `HF_STORAGE_CONTROLLER_TOKEN`. `actions.inspect` obtains a private revision and validated path list, loads the catalogue, then emits **counts only**:
+
+- Number of catalogue books.
+- Number of files under `data/`.
+- Number of novel directories and orphan directories.
+- Number of duplicate normalised titles.
+- Counts of missing EPUBs and original ZIP archives.
+- Number of cover files.
+
+If the catalogue is damaged, the inspection returns a restricted count-only error summary and the revision rather than dumping titles into public logs.
+
+**Limit:** This is a lightweight catalogue/file-inventory check. It does not download and rehash every EPUB, inspect source chapters, or guarantee that the reader UI renders the collection correctly.
+
+### 12.3 `HF - Back up entire dataset PRIVATELY`
+
+Entrypoint:
+
+```bash
+python -m taiyou_storage.actions backup --backup-repo OWNER/PRIVATE-BACKUP-DATASET
+```
+
+The backup:
+
+- Requires that the separate backup dataset ID is valid, **different** from the source and under the same HF account.
+- Creates the destination only as **private**, if it does not already exist and the token permits creation.
+- Refuses to use a public destination.
+- Takes a source inventory pinned to a specific SHA, including files outside `data/` when present.
+- Downloads files locally to a temporary folder, calculating sizes and SHA-256s.
+- Uploads into `snapshots/<source_revision>/files/...` and an adjacent `manifest.json`.
+- Re-lists the destination and re-downloads every backed-up file to compare its size and SHA-256.
+- Verifies the uploaded manifest matches the source manifest.
+- Prints count/revision information rather than private novel contents in public CI logs.
+
+A backup workflow is **not automatically run before every other manual Action**. The full local reset still has its own independent verified-backup-first requirement.
+
+### 12.4 `HF - Export novel names and conflicts PRIVATELY`
+
+Entrypoint:
+
+```bash
+python -m taiyou_storage.actions report --backup-repo OWNER/PRIVATE-BACKUP-DATASET
+```
+
+This copies a timestamped report group under `reports/<UTC>-<SHA>/` in the **private backup dataset**, containing:
+
+- `novels.csv`
+- `conflicts.csv`
+- `library.json`
+
+Only counts are printed publicly. Do **not** convert this to a public GitHub Actions artifact or paste its private content into a public issue.
+
+### 12.5 `HF - Upload covers from Novel_Library artifact`
+
+The separate workflow `hf-upload-covers-artifact.yml`:
+
+1. Accepts a Novel_Library **source GitHub Actions run ID**.
+2. Downloads the `novel-cover-images` artifact using the configured GitHub access token.
+3. Packages the source cover files into a local ZIP.
+4. Runs the cover importer in preview mode, suppressing sensitive details from public logs.
+5. Optionally invokes `--apply` when the workflow's explicit `apply_changes` input is true.
+
+**Nuance:** The workflow invokes preview and apply as **separate CLI processes**, so the apply process recomputes and checks the current state; within batches, revision checks still protect consistency. Do not claim this workflow has the same single-process human confirmation semantics as the Windows CMD cover launcher.
+
+### 12.6 Source, backup and artifact credentials
+
+| Credential/environment key | Consumer | Responsibility |
+|---|---|---|
+| `HF_STORAGE_CONTROLLER_TOKEN` (GitHub Actions secret) | Manual HF workflows | Authenticate to private Hugging Face storage |
+| `HF_TOKEN` | Python code running in Actions | Environment variable populated from the secret |
+| `NOVEL_LIBRARY_ACTIONS_TOKEN` | Cross-repo artifact access and genre repair | GitHub token with read access to the relevant Novel_Library Actions artifacts |
+| `HF_DATASET_REPO` | `cli.py`, `covers.py`, `reset.py` | Optional target override |
+| `--repo` | Novel uploader and other applicable CLI entrypoints | Explicit target repository selection |
+| `BACKUP_REPO` / `--backup-repo` | Private backup and report workflows | Distinct private backup dataset |
+| Hugging Face CLI local login | Windows utilities | Local authentication; do not store credentials in repo files |
+
+Never create or hard-code an actual token, secret string or credential in source, tests, documentation, logs or PR comments. If a workflow fails because of a missing secret, the code should not silently fall back to an unsafe public operation.
+
+## 13. Historical source-genre restoration
+
+### 13.1 Purpose and scope
+
+`genre_repair.py` is an **independent specialised workflow**, not a normal step of each novel upload. It exists because older Novel_Library chapter-batch assemblies could lose source genres (`dc:subject`), status and sometimes descriptions. It tries to recover that source metadata from original GitHub Actions artifacts while preserving the existing catalogue and novel binaries.
+
+The owner previously requested that an unrelated genre-restoration failure not be included in audit remediation. **Do not silently "fix" or execute this workflow during unrelated storage work**. This does not prevent documenting what the code currently does.
+
+### 13.2 Data sources and identity
+
+The repair reads:
+
+- The private dataset's existing `data/library.json`.
+- The upstream Novel Library registry at `RichardDaffern/Novel_Library`, `main/downloaded_novels.json`.
+- Only eligible downloaded **first chapter-batch artifact metadata**, identified by historical run IDs and artifact names.
+
+The artifact name pattern is `chapter-batch-<20-hex-source-hash>-<start>-<end>`. The code selects the earliest available matching range from a completed all-range registry record. It parses the artifact ZIP's `metadata.json` and embedded EPUB package metadata, **not full chapter prose**.
+
+`genre_repair.source_key` normalises source URLs differently from the cover importer: host/path case-normalised, `www.` stripped, and query parameters not included. If refactoring, preserve the safety reason for matching exclusively on a **unique source identity** and add tests for URL corner cases.
+
+### 13.3 Fields it may change
+
+A conservative plan is created by `plan_repair`:
+
+- If `sourceTags` is already nonempty, leave the entry alone.
+- Skip missing/invalid source URLs.
+- Skip duplicate source URL identities.
+- Skip novel identities with no verified historical genres.
+- Add `sourceTags` only when missing.
+- Add a missing `description` only when a verified historical description exists.
+- Add an absent `status` only when the verified historical status is `Ongoing` or `Completed`.
+- Preserve all book IDs, archive paths, EPUBs, cover metadata, personal tags, progress, notes, reviews and ratings.
+
+### 13.4 Applying and auditing
+
+```powershell
+py -m taiyou_storage.genre_repair           # Preview / count report
+py -m taiyou_storage.genre_repair --apply   # Explicit private catalogue update
+```
+
+The code requires **both** `HF_TOKEN` and `NOVEL_LIBRARY_ACTIONS_TOKEN`, checks the dataset is private, computes only count-level public statistics, and refuses an intervening dataset revision change. A successful apply commits a backup of the previous catalogue at `backups/genre-repair/<UTC>-<SHA>.json` plus the updated `data/library.json`, without uploading/rewriting the EPUBs and original ZIPs.
+
+Historical artifact expiry is a real limitation. Missing/expired artifacts are **not** grounds to invent genres based on titles or guessed website categories.
+
+### 13.5 Dedicated tests
+
+The relevant tests are in `tests/test_genre_repair.py`. They should cover noisy `dc:subject` filtering, source identity, duplicate safeguards, absent/expired artifacts, preservation of personal metadata and add-only updates. This feature should be changed only as a separately scoped request.
+
