@@ -1,37 +1,82 @@
-# Cross-repository disposable Hugging Face folder acceptance
+# Cross-repository readable-folder acceptance: pre-created private dataset
 
-This is a separately gated integration test for:
+This is an opt-in integration test for Storage Controller readable-folder support
+and Taiyou's Personal Library Reader PR #4. Production data is **never accessed**.
 
-- `Taiyou-Novels-Storage-Controller` feature branch `feature/readable-hf-folder-compatibility`
-- `Taiyous-Personal-Library` draft PR #4, commit `1edff33d`
+## Pre-created dataset, no repository creation or deletion rights
 
-The test **never connects to the production `AdityaSreevatsaK/Taiyous-Novels` dataset**. It uses only synthetic EPUBs, archives, images and reading data.
+Manually create **one empty, private Hugging Face dataset** named:
 
-## How to review
+`AdityaSreevatsaK/Taiyou-Readable-Folder-Test`
 
-[Readable Folder Cross-Repo Acceptance workflow](../.github/workflows/readable-folder-acceptance.yml) runs automatically on changes to the `test/readable-folder-cross-repo-20261113` branch. It has two steps:
+Use Hugging Face > New > Dataset, choose the namespace `AdityaSreevatsaK`,
+the exact name `Taiyou-Readable-Folder-Test`, and set **Private**.
 
-1. **Cross-repository contract:** Windows/Linux-compatible Storage Controller unit tests on Python 3.11; pinned Reader PR #4 TypeScript checks and its three dual-format regression files. GitHub's normal Storage Controller PR CI independently checks Windows/Linux and Python 3.11/3.12.
-2. **Real Hub integration:** requires repository Actions secret `HF_DISPOSABLE_TEST_TOKEN`, from a *dedicated test account or narrowly scoped token* with permission to create/delete its own private datasets. It creates `<test-account>/taiyou-disposable-readable-e2e-<random>` as **Private**, then seeds one ID-only and one already-readable fictional book.
+Create a **fine-grained Hugging Face token** with read/write access to **this
+one test dataset**. It must *not* grant access to `Taiyous-Novels` and does
+*not* need permission to create or delete datasets.
 
-The live test validates:
+Save the token in the GitHub repository **Taiyou-Novels-Storage-Controller**
+under Settings > Secrets and variables > Actions > New repository secret:
 
-- The original EPUB is structurally valid, the ZIP contains that EPUB, and covers and extra files are byte-identical.
-- The pre-migration catalogue contains both folder formats with the correct immutable IDs.
-- A revision-bound, single-commit file copy, old-file deletion and `data/library.json` path update.
-- Preservation of SHA-256 contents of every EPUB, ZIP, cover, extra file, reading-progress sidecar, personal-review sidecar and collections file.
-- No ID changes or mutation of an already-readable book; a book title may differ from the folder's label.
-- Old ID-only files are absent after migration, while the new paths are present.
-- A stale-parent write is rejected and cannot overwrite progress.
-- Any attempt to run the production migration helper against the real production repo is rejected.
-- The disposable test dataset is deleted in `finally` after the run. On cleanup failure, CI reports failure and a human should remove **only** the named test dataset.
+`HF_DISPOSABLE_TEST_TOKEN`
 
-## Required secret
+The target `HF_DISPOSABLE_TEST_REPO` is hardcoded in GitHub Actions to
+`AdityaSreevatsaK/Taiyou-Readable-Folder-Test`, and is also checked by
+the Python runner before connecting to Hugging Face. No separate variable or
+secret is required for the dataset name. Do not paste the secret in chat.
 
-Set `HF_DISPOSABLE_TEST_TOKEN` in **this Storage Controller repository's GitHub Actions secrets**. Do **not** use `HF_STORAGE_CONTROLLER_TOKEN` or a token restricted to the production novel dataset.
+## Running acceptance
 
-When the secret is absent, the live job fails explicitly as **BLOCKED: real Hugging Face test NOT executed**, rather than reporting an incorrect success. The cross-repository static job can pass without a token.
+The workflow `.github/workflows/readable-folder-acceptance.yml`
+executes two jobs on the `test/readable-folder-cross-repo-20261113`
+branch and can be rerun via Actions.
 
-**The real test does not exercise the production-only Cloudflare OAuth gateway.** The Reader tests mock the authenticated gateway, but a true end-to-end OAuth-on-disposable-dataset test would require a dedicated protected Cloudflare staging gateway pointed only at an isolated test dataset.
+1. **Contract verification**, without credentials: Storage Controller Python
+   tests and Reader TypeScript and dual-format gateway tests at pinned
+   Reader commit `1edff33d`. Existing CI also runs Windows/Linux with
+   Python 3.11 and 3.12.
+2. **Real Hub acceptance**: Require the dedicated test token. Refuse to
+   continue if the dataset is absent, public or already contains files other
+   than optional `README.md` and `.gitattributes`. No existing files
+   will be overwritten.
 
-Neither this workflow nor the migration script enables production folder migration. Reader PR #4 and the Storage Controller migration must be reviewed and deployed in the correct order before any separately approved production migration.
+The second job uploads only fictional materials to the existing private
+dataset and then verifies:
+
+- ID-only and readable folder formats coexist with unchanged 24-character IDs.
+- EPUB, original ZIP, cover PNG, auxiliary file and catalogue bytes are
+  accessible and match their expected SHA-256 hashes.
+- One revision-bound, atomic migration copies and removes only the ID-only
+  book's files and updates `data/library.json` without altering any
+  already-readable book.
+- Cover, progress, review and collection metadata survive unchanged.
+- A stale-parent update is refused.
+- Explicit production migration prohibition still holds.
+- **Cleanup deletes only the files created by this run**, using an exact,
+  revision-bound list of paths. The private test dataset itself remains
+  available for future integration tests.
+
+### Failure and clean-up safeguards
+
+The runner refuses writes if any data is present at the start. Its cleanup
+refuses files outside the known synthetic fixture list or a changed/uncertain
+commit revision. If the network disconnects during a commit, the script can
+leave some synthetic data in the test dataset rather than guessing which files
+are safe to remove. This is intentionally fail-closed: manually inspect and
+clear **only the pre-created test dataset** before rerunning.
+
+A failed workflow due to missing credentials or missing test dataset is an
+**unexecuted acceptance gate**, not a passed migration. It cannot be
+substituted with the production-scoped `HF_STORAGE_CONTROLLER_TOKEN`.
+
+### Scope
+
+The script **never** calls `create_repo` or `delete_repo`, never migrates
+the production dataset, and never changes the Reader's production deployment.
+The Reader's Cloudflare OAuth gateway remains separately gated: current
+cross-repository tests mock the authenticated gateway rather than running
+against a live disposable Cloudflare environment.
+
+Reader PR #4 and the Storage Controller compatibility integration must be
+reviewed before a separate, verified-backup production migration is considered.
