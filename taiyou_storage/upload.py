@@ -18,6 +18,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 from .core import DEFAULT_REPO, normalized_title, sha256_file, validate_catalogue
+from .paths import book_dir, legacy_dir, readable_dir
 
 MAX_ZIP = 120 * 1024 * 1024
 MAX_EPUB = 120 * 1024 * 1024
@@ -171,7 +172,8 @@ def matching_entry(books: list[dict], meta: dict, epub: bytes) -> tuple[dict | N
 
 
 def plan(books: list[dict], local: list[tuple[Path, dict, bytes, str]],
-         remote_hashes: dict[str, str], remote_paths: set[str]) -> list[dict]:
+         remote_hashes: dict[str, str], remote_paths: set[str], *,
+         readable_new: bool = False) -> list[dict]:
     """Build a conservative plan; remote_hashes maps archive and EPUB paths to SHA256."""
     output = []
     assigned = {}
@@ -182,8 +184,10 @@ def plan(books: list[dict], local: list[tuple[Path, dict, bytes, str]],
             if chosen_id in assigned:
                 raise UploadError("CONFLICT: multiple local ZIPs target same novel: " + assigned[chosen_id])
             assigned[chosen_id] = path.name
-            archive = f"data/novels/{chosen_id}/original.zip"
-            epub_path = f"data/novels/{chosen_id}/source.epub"
+            directory = book_dir(entry) if entry else (
+                readable_dir(chosen_id, meta["title"]) if readable_new else legacy_dir(chosen_id))
+            archive = f"{directory}/original.zip"
+            epub_path = f"{directory}/source.epub"
             if entry:
                 if entry["epubPath"] != epub_path or (entry.get("archivePath") not in (None, archive)):
                     raise UploadError("CONFLICT: existing catalogue paths unexpected")
@@ -200,7 +204,7 @@ def plan(books: list[dict], local: list[tuple[Path, dict, bytes, str]],
                 state = "NEW"
             output.append({"path": path, "metadata": meta, "epub": epub,
                            "digest": digest, "id": chosen_id, "existing": entry,
-                           "reason": reason, "state": state})
+                           "directory": directory, "reason": reason, "state": state})
         except UploadError as exc:
             output.append({"path": path, "state": "CONFLICT", "reason": str(exc)})
     return output
@@ -255,11 +259,17 @@ def apply_item(api, repo: str, token: str, item: dict, *,
         desired_id = entry["id"] if entry else hashlib.sha256(item["epub"]).hexdigest()[:24]
         if desired_id != item["id"]:
             raise UploadError("Remote identity changed since planning; re-run plan")
-        archive = f"data/novels/{desired_id}/original.zip"
-        epub_path = f"data/novels/{desired_id}/source.epub"
+        directory = book_dir(entry) if entry else item.get("directory", legacy_dir(desired_id))
+        if (directory != legacy_dir(desired_id) and
+                not directory.startswith(legacy_dir(desired_id) + " - ")):
+            raise UploadError("Invalid planned directory")
+        archive = f"{directory}/original.zip"
+        epub_path = f"{directory}/source.epub"
         if entry and (entry["epubPath"] != epub_path or
                       entry.get("archivePath") not in (None, archive)):
             raise UploadError("Unexpected remote paths; refusing overwrite")
+        if item.get("directory", directory) != directory:
+            raise UploadError("Planned directory changed; re-run preview")
         if not entry and (archive in files or epub_path in files):
             raise UploadError("Orphaned remote files: manual review required")
         if sha256_file(item["path"]) != item["digest"]:
@@ -324,6 +334,8 @@ def main(argv=None) -> int:
     parser.add_argument("folder", nargs="?", default="novels")
     parser.add_argument("--repo", default=DEFAULT_REPO)
     parser.add_argument("--recursive", action="store_true")
+    parser.add_argument("--readable-folders", action="store_true",
+                        help="Create new novels in ID - Title directories on a disposable private test dataset only")
     parser.add_argument("--apply", action="store_true", help="Write changes to private HF dataset")
     parser.add_argument("--interactive", action="store_true",
                         help="Preview and approve in one revision-guarded process")
@@ -363,14 +375,16 @@ def main(argv=None) -> int:
             except UploadError:
                 continue  # A conflict will be shown explicitly in the plan.
             if existing:
-                relevant_paths.add(f"data/novels/{existing['id']}/original.zip")
-                relevant_paths.add(f"data/novels/{existing['id']}/source.epub")
+                directory = book_dir(existing)
+                relevant_paths.add(f"{directory}/original.zip")
+                relevant_paths.add(f"{directory}/source.epub")
         hashes = {}
         for remote_path in sorted(relevant_paths & files):
             cached = hf_hub_download(repo_id=args.repo, filename=remote_path,
                                      repo_type="dataset", revision=sha)
             hashes[remote_path] = sha256_file(Path(cached))
-        instructions = plan(books, local, hashes, files)
+        instructions = plan(books, local, hashes, files,
+                            readable_new=args.readable_folders)
         for item in instructions:
             print(f"[{item['state']}] {item['path'].name}: {item['reason']}")
         if any(item["state"] == "CONFLICT" for item in instructions):
@@ -379,6 +393,8 @@ def main(argv=None) -> int:
         if not args.apply and not args.interactive:
             print("Preview only. Add --apply or --interactive to perform updates.")
             return 0
+        if args.readable_folders and args.repo == DEFAULT_REPO:
+            raise UploadError("Readable folder writes to production are blocked until the reader migration is deployed")
         if args.interactive:
             if not sys.stdin.isatty():
                 raise UploadError("Interactive approval requires a local console")
