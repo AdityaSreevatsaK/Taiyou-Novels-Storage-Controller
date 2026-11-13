@@ -1,0 +1,99 @@
+name: Readable Folder Cross-Repo Acceptance
+
+on:
+  push:
+    branches: [test/readable-folder-cross-repo-20261113]
+    paths:
+      - .github/workflows/readable-folder-acceptance.yml
+      - scripts/verify_disposable_folder_migration.py
+      - taiyou_storage/**
+      - tests/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: readable-novel-private-dataset-integration
+  cancel-in-progress: false
+
+jobs:
+  validate-both-repositories:
+    if: github.repository == 'AdityaSreevatsaK/Taiyou-Novels-Storage-Controller'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: controller
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: AdityaSreevatsaK/Taiyous-Personal-Library
+          ref: 1edff33d15317a4ddf004129093b581e500ee642
+          path: reader
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: reader/package-lock.json
+      - name: Install Storage Controller's tested dependencies
+        working-directory: controller
+        run: python -m pip install -r requirements.txt
+      - name: Verify all Storage Controller tests and Python sources
+        working-directory: controller
+        run: |
+          python -m pip check
+          python -m compileall -q taiyou_storage tests scripts
+          python -m unittest discover -s tests -v
+      - name: Verify Reader's dual-format path and gateway contract
+        working-directory: reader
+        run: |
+          npm ci --no-fund --no-audit
+          npm run typecheck
+          npx vitest run tests/readable-folder-paths.test.ts tests/readable-folder-cloud.test.ts tests/readable-folder-gateway.test.ts
+      - name: Cross-repository summary
+        run: |
+          echo 'Python Storage Controller and TypeScript Reader contracts passed for both folder formats.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'No private dataset access was required for this phase.' >> "$GITHUB_STEP_SUMMARY"
+
+  disposable-private-hf-migration:
+    needs: validate-both-repositories
+    if: github.repository == 'AdityaSreevatsaK/Taiyou-Novels-Storage-Controller' && github.event_name != 'pull_request' && github.ref == 'refs/heads/test/readable-folder-cross-repo-20261113'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      # Only a dedicated test credential with dataset-creation rights is
+      # allowed. The production-scoped storage token cannot create a new repo
+      # and must never be reused for migration acceptance.
+      HF_DISPOSABLE_TEST_TOKEN: ${{ secrets.HF_DISPOSABLE_TEST_TOKEN }}
+      HF_HUB_DISABLE_PROGRESS_BARS: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11'
+      - name: Require isolated Hugging Face test credentials
+        shell: bash
+        run: |
+          if [ -z "$HF_DISPOSABLE_TEST_TOKEN" ]; then
+            echo '::error::BLOCKED: HF_DISPOSABLE_TEST_TOKEN must be configured with permission to create a private test dataset.'
+            echo 'The test creates a new private synthetic dataset; production is forbidden.'
+            echo 'BLOCKED: real Hugging Face test NOT executed (no dedicated test secret).' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+      - name: Install pinned dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Perform REAL create, read, migrate, compare and delete against newly created PRIVATE dataset only
+        run: python -m scripts.verify_disposable_folder_migration
+      - name: Record verified live acceptance
+        run: |
+          echo 'PASS: real private disposable dataset migrated with immutable-ID safety, file digests, catalogue, cover, ZIP, personal sidecars and stale-commit conflict.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'The test dataset was deleted, and production data was untouched.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Production Cloudflare OAuth gateway is a separate, unverified end-to-end gate.' >> "$GITHUB_STEP_SUMMARY"
