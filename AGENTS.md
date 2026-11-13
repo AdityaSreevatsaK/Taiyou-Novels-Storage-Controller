@@ -1342,3 +1342,33 @@ Before claiming the Storage Controller task is finished, check each applicable b
 This handbook was compiled from **the current contents of this GitHub repository**, including `taiyou_storage/*.py`, test suites, workflows, README files and the verified `v0.1.0` release. It is intentionally written with examples containing *synthetic* book names and data. It does **not** disclose the contents of the actual private Hugging Face dataset.
 
 **Keep it current.** Any PR that changes a key path, data contract, CLI argument, security boundary, workflow, test architecture or release procedure should assess and update this document alongside the code. The code is authoritative when this explanatory file becomes stale.
+
+
+## 25. Readable-folder layout and migration (added after v0.1.0)
+
+For existing and new novels, use `taiyou_storage.paths` rather than hardcoding
+`data/novels/<id>/...`. Both ID-only folders and validated
+`data/novels/<id> - <sanitised-title>/...` are now supported. The folder
+label is a historical display name and must not change automatically when
+the novel is retitled. The stable 24-hex ID continues to own personal data.
+
+New Storage Controller uploads use readable folders by default. The existing
+`--legacy-new-folders` flag is a backwards-compatible opt-out.
+
+**Production moves are a separate destructive-risk operation**, implemented
+in `taiyou_storage.migrate_folders` and the gated
+`taiyou_storage.migrate_production`. The normal folder migration CLI
+only previews the production dataset and refuses direct production apply.
+The manual production workflow additionally requires a successful real,
+disposable private HF migration acceptance run, an actually deployed reader,
+a complete verified snapshot in a **different private** dataset, unchanged
+revision and explicit confirmation. Existing novel ZIP/EPUB/cover file copies,
+deletes and catalogue edits are grouped into small atomic, revision-guarded
+commits, and moved SHA-256 hashes are rechecked.
+
+**Never claim the production dataset has been migrated solely because the
+code or PR was merged.** Validate the actual HF dataset inventory after a
+successful, explicitly triggered migration. A failure after some batches
+requires re-preview and resume, not a full dataset reset.
+
+See [the migration runbook](docs/READABLE_FOLDER_MIGRATION.md).
