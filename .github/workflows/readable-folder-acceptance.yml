@@ -67,10 +67,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
-      # Use a dedicated disposable token where available. The storage token is
-      # permitted only for a freshly created, random, private dataset verified
-      # by the script; it cannot target or mutate the production dataset.
-      HF_DISPOSABLE_TEST_TOKEN: ${{ secrets.HF_DISPOSABLE_TEST_TOKEN || secrets.HF_STORAGE_CONTROLLER_TOKEN }}
+      # Only a dedicated test credential with dataset-creation rights is
+      # allowed. The production-scoped storage token cannot create a new repo
+      # and must never be reused for migration acceptance.
+      HF_DISPOSABLE_TEST_TOKEN: ${{ secrets.HF_DISPOSABLE_TEST_TOKEN }}
       HF_HUB_DISABLE_PROGRESS_BARS: '1'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -83,7 +83,7 @@ jobs:
         shell: bash
         run: |
           if [ -z "$HF_DISPOSABLE_TEST_TOKEN" ]; then
-            echo '::error::BLOCKED: no Hugging Face test-capable token is configured.'
+            echo '::error::BLOCKED: HF_DISPOSABLE_TEST_TOKEN must be configured with permission to create a private test dataset.'
             echo 'The test creates a new private synthetic dataset; production is forbidden.'
             echo 'BLOCKED: real Hugging Face test NOT executed (no dedicated test secret).' >> "$GITHUB_STEP_SUMMARY"
             exit 1
