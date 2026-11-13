@@ -45,3 +45,32 @@ GitHub Actions can inspect, back up and import covers, but cannot clear the data
 CI remains offline and is never allowed to touch the real Hugging Face dataset.
 
 **All GitHub Actions destruction paths have been retired.** Only the local, interactive, backup-first reset can clear `data/`; it cannot delete the Hugging Face dataset repository.
+
+
+## Readable folder migration acceptance and backup readiness
+
+The "Readable Folder Cross-Repo Acceptance" workflow on the retained
+`test/readable-folder-batch-acceptance-20261113` branch validates **real**
+multi-novel Hugging Face migration commits. It uses the manually created PRIVATE
+dataset `AdityaSreevatsaK/Taiyou-Readable-Folder-Test` and the dedicated
+`HF_DISPOSABLE_TEST_TOKEN`, scoped to read/write that test dataset only.
+The workflow never creates/deletes repositories and removes its synthetic files
+with a guarded cleanup operation. It tests the current deployed Reader path
+contract with the same source code used for production compatibility.
+
+On `master`, the "HF - Readable folder migration backup readiness" workflow
+defaults to a **read-only** production preview and a private backup access check.
+On explicit manual dispatch with `take_verified_backup=true`, it also creates
+a complete PRIVATE snapshot with SHA-256 verification of the downloaded backup
+blobs. This is a **backup**, not an EPUB/ZIP folder migration.
+
+The backup dataset `AdityaSreevatsaK/Taiyous-Novels-Backup` must be PRIVATE
+and accessible to `HF_STORAGE_CONTROLLER_TOKEN` with read/write permissions.
+If it is absent, create it as a private HF dataset and grant the token access.
+Do not grant the disposable test token access to any production dataset.
+
+The actual production migration remains a separate, explicit workflow. Its
+write path requires a successful **latest SHA** live batch acceptance run,
+current Reader production deployment, a complete independently verified private
+snapshot, revision checks and an exact confirmation phrase. Never run this
+migration without separate owner approval.
