@@ -24,6 +24,25 @@ from .migrate_folders import (
 CONFIRM_PHRASE = "MIGRATE READABLE NOVEL FOLDERS"
 
 
+def select_pilot_candidate(work: list[dict], books: list[dict]) -> dict:
+    """Choose ONE complete, linked EPUB/ZIP/cover book, without logging private titles."""
+    indexed = {book["id"]: book for book in books}
+    eligible = []
+    for row in work:
+        if row["status"] != "MIGRATE":
+            continue
+        book = indexed[row["id"]]
+        cover = book["metadata"].get("coverPath") or book.get("coverPath")
+        archive = book.get("archivePath")
+        moved = {old for old, _ in row["moves"]}
+        if book["epubPath"] in moved and archive and archive in moved and cover and cover in moved:
+            eligible.append(row)
+    if not eligible:
+        raise MigrationError("No safe pilot candidate with EPUB, original ZIP and linked cover")
+    # Deterministic selection by stable ID, independent of catalogue ordering.
+    return min(eligible, key=lambda row: row["id"])
+
+
 def sha256_path(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -66,7 +85,7 @@ def _load(api, token: str) -> tuple[dict, str, set[str]]:
 
 
 def execute(api, token: str, backup_repo: str, *, apply: bool,
-            confirmation: str = "") -> dict[str, int]:
+            confirmation: str = "", pilot_only: bool = False) -> dict[str, int]:
     """Plan and optionally execute only after a full, privately verified backup."""
     if not token:
         raise MigrationError("HF_STORAGE_CONTROLLER_TOKEN is missing")
@@ -85,6 +104,7 @@ def execute(api, token: str, backup_repo: str, *, apply: bool,
         return counts
     if confirmation != CONFIRM_PHRASE:
         raise MigrationError("Exact explicit migration confirmation is missing")
+    pilot = select_pilot_candidate(work, catalogue["books"]) if pilot_only else None
     # Keep this as the ONLY entrypoint for production migration writes. The
     # backup function verifies every source file's SHA against the PRIVATE
     # destination dataset, including progress, notes and collection sidecars.
@@ -96,7 +116,7 @@ def execute(api, token: str, backup_repo: str, *, apply: bool,
     current = api.dataset_info(DEFAULT_REPO, token=token)
     if current.private is not True or current.sha != original_sha:
         raise MigrationError("Source revision changed during backup; no migration")
-    groups = group_migration_batches(work)
+    groups = [[pilot]] if pilot is not None else group_migration_batches(work)
     changed = 0
     for index, group in enumerate(groups, 1):
         before = current.sha
@@ -120,8 +140,22 @@ def execute(api, token: str, backup_repo: str, *, apply: bool,
             time.sleep(2)
     final, final_sha, final_files = _load(api, token)
     remaining = plan_migration(final["books"], final_files)
-    if any(row["status"] != "ALREADY_READABLE" for row in remaining):
-        raise MigrationError("Some books remain in the old format; re-preview before retry")
+    if pilot is None:
+        if any(row["status"] != "ALREADY_READABLE" for row in remaining):
+            raise MigrationError("Some books remain in the old format; re-preview before retry")
+    else:
+        initial_status = {row["id"]: row["status"] for row in work}
+        final_status = {row["id"]: row["status"] for row in remaining}
+        if (changed != 1 or final_status.get(pilot["id"]) != "ALREADY_READABLE"
+                or any(final_status.get(book_id) != status
+                       for book_id, status in initial_status.items()
+                       if book_id != pilot["id"])):
+            raise MigrationError("Pilot changed more than the selected novel or did not complete")
+        before_by_id = {book["id"]: book for book in catalogue["books"]}
+        after_by_id = {book["id"]: book for book in final["books"]}
+        if any(after_by_id[book_id] != before
+               for book_id, before in before_by_id.items() if book_id != pilot["id"]):
+            raise MigrationError("Pilot unexpectedly changed another catalogue entry")
     if len(final["books"]) != len(catalogue["books"]):
         raise MigrationError("Catalogue entry count changed unexpectedly")
     if {b["id"] for b in final["books"]} != {b["id"] for b in catalogue["books"]}:
@@ -141,9 +175,11 @@ def main() -> int:
         "HF_MIGRATION_BACKUP_REPO", "AdityaSreevatsaK/Taiyous-Novels-Backup").strip()
     apply = os.environ.get("HF_READABLE_MIGRATION_APPLY") == "true"
     confirm = os.environ.get("HF_READABLE_MIGRATION_CONFIRM", "")
+    pilot_only = os.environ.get("HF_READABLE_MIGRATION_PILOT_ONE") == "true"
     try:
         from huggingface_hub import HfApi
-        execute(HfApi(token=token), token, backup, apply=apply, confirmation=confirm)
+        execute(HfApi(token=token), token, backup, apply=apply,
+                confirmation=confirm, pilot_only=pilot_only)
         return 0
     except Exception as exc:
         # Public GitHub Actions logs must not contain novel names, source
