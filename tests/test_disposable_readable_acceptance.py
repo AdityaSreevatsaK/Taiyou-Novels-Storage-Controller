@@ -10,9 +10,11 @@ import os
 import unittest
 import zipfile
 from unittest.mock import patch
+from types import SimpleNamespace
 
 from scripts.verify_disposable_folder_migration import (
-    BOOK_ID, OTHER_ID, create_fixture, run,
+    BOOK_ID, OTHER_ID, TEST_REPO, cleanup_fixture, create_fixture,
+    run, validate_test_repo,
 )
 from taiyou_storage.core import validate_catalogue
 from taiyou_storage.migrate_folders import plan_migration
@@ -53,6 +55,110 @@ class DisposableRunnerOfflineTests(unittest.TestCase):
         self.assertTrue(all(dst.startswith(items[BOOK_ID]["new"] + "/") for _, dst in moves))
         self.assertNotEqual(book_dir(catalogue["books"][1]), legacy_dir(OTHER_ID))
         self.assertNotIn("data/library.json", [src for src, _ in moves])
+
+    def test_only_single_precreated_dataset_is_ever_permitted(self):
+        self.assertEqual(validate_test_repo(TEST_REPO), TEST_REPO)
+        for repo in (
+            "AdityaSreevatsaK/Taiyous-Novels",
+            "AdityaSreevatsaK/Taiyou-Readable-Folder-Test-Extra",
+            "OtherAccount/Taiyou-Readable-Folder-Test",
+            "",
+        ):
+            with self.subTest(repo=repo), self.assertRaisesRegex(RuntimeError, "BLOCKED"):
+                validate_test_repo(repo)
+        with patch.dict(os.environ, {
+            "HF_DISPOSABLE_TEST_TOKEN": "hf_fake_only_for_mock_tests",
+            "HF_DISPOSABLE_TEST_REPO": "AdityaSreevatsaK/Taiyous-Novels",
+        }):
+            with patch("scripts.verify_disposable_folder_migration.HfApi") as hub:
+                with self.assertRaisesRegex(RuntimeError, "BLOCKED"):
+                    run()
+                hub.assert_not_called()
+
+    def test_nonempty_private_test_dataset_fails_before_any_write(self):
+        with patch.dict(os.environ, {
+            "HF_DISPOSABLE_TEST_TOKEN": "hf_mocked_test_only",
+            "HF_DISPOSABLE_TEST_REPO": TEST_REPO,
+        }):
+            with patch("scripts.verify_disposable_folder_migration.HfApi") as factory:
+                hub = factory.return_value
+                hub.dataset_info.return_value = SimpleNamespace(private=True, sha="f" * 40)
+                hub.list_repo_files.return_value = [
+                    "README.md", "data/novels/do-not-touch/source.epub",
+                ]
+                with self.assertRaisesRegex(RuntimeError, "existing data"):
+                    run()
+                hub.create_commit.assert_not_called()
+                hub.create_repo.assert_not_called()
+                hub.delete_repo.assert_not_called()
+
+    def test_cleanup_removes_only_owned_files_and_preserves_readme(self):
+        class FakePrivateHub:
+            def __init__(self):
+                self.files = {".gitattributes", "README.md", "data/library.json",
+                              "data/novels/" + BOOK_ID + "/source.epub"}
+                self.sha = "f" * 40
+                self.commits = []
+
+            def dataset_info(self, repo, token=None):
+                self._assert_repo(repo)
+                return SimpleNamespace(private=True, sha=self.sha)
+
+            def list_repo_files(self, repo_id, repo_type, revision, token=None):
+                self._assert_repo(repo_id)
+                assert repo_type == "dataset" and revision == self.sha
+                return sorted(self.files)
+
+            def create_commit(self, **kwargs):
+                self._assert_repo(kwargs["repo_id"])
+                assert kwargs["parent_commit"] == self.sha
+                paths = [item.path_in_repo for item in kwargs["operations"]]
+                self.commits.append(paths)
+                assert all(type(item).__name__ == "CommitOperationDelete"
+                           for item in kwargs["operations"])
+                self.files.difference_update(paths)
+                self.sha = "e" * 40
+                return SimpleNamespace(oid=self.sha)
+
+            @staticmethod
+            def _assert_repo(repo):
+                assert repo == TEST_REPO
+
+        hub = FakePrivateHub()
+        baseline = {"README.md", ".gitattributes"}
+        owned = {"data/library.json", "data/novels/" + BOOK_ID + "/source.epub"}
+        cleanup_fixture(hub, TEST_REPO, "fake-token", baseline, owned, "f" * 40)
+        self.assertEqual(hub.files, baseline)
+        self.assertEqual(len(hub.commits), 1)
+        self.assertEqual(set(hub.commits[0]), owned)
+
+    def test_cleanup_refuses_unknown_files_and_changed_revisions(self):
+        class ProbeHub:
+            def __init__(self, sha="f" * 40, extra=False):
+                self.sha = sha
+                self.files = ["README.md", "data/library.json"] + (
+                    ["data/other-user/file"] if extra else []
+                )
+                self.writes = []
+
+            def dataset_info(self, repo, token=None):
+                return SimpleNamespace(private=True, sha=self.sha)
+
+            def list_repo_files(self, repo_id, repo_type, revision, token=None):
+                return list(self.files)
+
+            def create_commit(self, **kwargs):
+                self.writes.append(kwargs)
+
+        baseline = {"README.md"}
+        owned = {"data/library.json"}
+        for hub, expected in [
+            (ProbeHub(extra=True), "not owned"),
+            (ProbeHub(sha="e" * 40), "revision changed"),
+        ]:
+            with self.subTest(reason=expected), self.assertRaisesRegex(RuntimeError, expected):
+                cleanup_fixture(hub, TEST_REPO, "fake-token", baseline, owned, "f" * 40)
+            self.assertEqual(hub.writes, [])
 
     def test_missing_dedicated_token_aborts_before_any_remote_operation(self):
         with patch.dict(os.environ, {"HF_DISPOSABLE_TEST_TOKEN": ""}):
