@@ -20,7 +20,7 @@ The Storage Controller and Library App both accept *both formats* and can coexis
 ## Mandatory gates before a production move
 
 1. Latest reader `master` has passed the **production** `Deploy Application` workflow, with the exact master SHA deployed.
-2. The **latest** test branch of the controller has a successful `Readable Folder Cross-Repo Acceptance` workflow, including a real upload/copy/delete/hash check in a newly created, separate **private** Hugging Face test dataset. Offline mock tests are not a substitute.
+2. The latest `test/readable-folder-batch-acceptance-20261113` branch has a successful `Readable Folder Cross-Repo Acceptance` workflow at its **exact current head SHA**. This tests `apply_migration_batch()` in multiple commits against the **existing, pre-created private** Hugging Face test dataset `AdityaSreevatsaK/Taiyou-Readable-Folder-Test`. The workflow must restore that dataset to its original inventory without deleting the dataset.
 3. The entire real dataset is inventoried and all catalogue entries are validated. Missing source EPUB/ZIP/cover, unexpected destination files and unsafe source paths abort *all* writes.
 4. A different **private** Hugging Face dataset (default `AdityaSreevatsaK/Taiyous-Novels-Backup`) is accessible by the token with write rights. The complete original dataset must be copied into a revision-keyed snapshot and every copied file independently SHA-256 verified.
 5. No remote change occurred during backup. The source SHA is rechecked before starting any migration.
@@ -34,7 +34,7 @@ The production workflow's Python entrypoint is `taiyou_storage.migrate_productio
 
 - Read and validate the existing catalogue and dataset inventory, build an ID-preserving plan, and report **counts only** in public logs.
 - Make and verify a **complete private backup**, including reviews/progress/collections under `data/personal/`, all novel files and other repository content.
-- Group movable novels into small bounded commits (default at most 8 novels and 70 file operations per commit).
+- Group movable novels into bounded atomic commits (default at most 8 novels and 70 operations per commit, or fewer when needed). Live pre-production acceptance has verified two novels in one commit and a subsequent commit.
 - For each group, re-read the current private dataset SHA, catalogue and paths. Reject drift, changed identity, missing files or destination collisions.
 - Atomically copy each source file into its new labelled directory, remove the old path and update `data/library.json` in a single Hugging Face commit with `parent_commit` set.
 - Verify the returned SHA matches the live dataset revision and every destination file exists while old paths are absent.
@@ -59,9 +59,9 @@ GitHub workflow public logs must never include real novel titles, original filen
 
 ## Authentication blockers
 
-The real disposable test requires a Hugging Face token with **create private dataset**, read, write and delete rights, scoped to an isolated test dataset/namespace. In the controller repository add the Actions secret `HF_DISPOSABLE_TEST_TOKEN`. A dataset-specific production token may have write access to `Taiyous-Novels` but **cannot create** a separate dataset, resulting in HTTP 403. Grant the necessary rights to a **dedicated test token** rather than widening production access unnecessarily.
+The real disposable test uses the **manually created PRIVATE** dataset `AdityaSreevatsaK/Taiyou-Readable-Folder-Test`. `HF_DISPOSABLE_TEST_TOKEN` only needs **read/write permissions on that exact test dataset**. No repository creation or deletion permission is required. The runner refuses public, nonempty or other target datasets; it removes only its own synthetic files using a revision-guarded cleanup, retaining the test dataset.
 
-For the production backup, `HF_STORAGE_CONTROLLER_TOKEN` must have appropriate read/write access to the *pre-created private backup dataset*. If the token cannot create repositories, create `Taiyous-Novels-Backup` as PRIVATE using your own HF account, then grant this token write access to that exact private dataset.
+For the production backup, `HF_STORAGE_CONTROLLER_TOKEN` requires **read access** to `Taiyous-Novels` and **write access** to the separate **PRIVATE** `AdityaSreevatsaK/Taiyous-Novels-Backup` dataset. The 13 November read-only check could not access that backup dataset; it must be created privately by the owner or its token permissions corrected. The backup helper can create a missing private repo only with appropriate creation rights, but widening a production token merely to bypass a permission error is not recommended.
 
 Until the live disposable acceptance has **actually passed**, the production migration workflow intentionally refuses production writes.
 
@@ -75,3 +75,12 @@ Until the live disposable acceptance has **actually passed**, the production mig
 - The reader's `src/lib/novel-paths.ts`: browser and Cloudflare gateway path contract.
 
 Do not treat adding this documentation or merging controller code as proof that existing production folders have actually been renamed. Confirm the production Hugging Face dataset inventory after a successful live migration.
+
+
+## Current coordination and production boundary
+
+- Reader `master` `45233f4854b657d146965cf71a38142289411b18` passed the existing production `Deploy Application` run `43404544333` with dual-format support and readable-folder creation for new browser uploads.
+- The earlier **read-only** production preview showed **89 legacy novel folders**, **zero collisions**, and no already-readable book folders. This is historical until the next read-only run refreshes it.
+- Live private integration on the manually created test dataset has verified `apply_one()` (run `43431262417`) and the production-style `apply_migration_batch()` over two consecutive commits (see the latest successful run on the consolidation branch).
+- The reader path/gateway tests are mocked. Successful deployment alone is **not proof** of an authenticated live EPUB/cover/archive browser session. An authenticated owner smoke test is required before production moves.
+- **Never invoke production migration apply** as part of testing, consolidation or backup-readiness checks. It requires a separate, explicit approval.
