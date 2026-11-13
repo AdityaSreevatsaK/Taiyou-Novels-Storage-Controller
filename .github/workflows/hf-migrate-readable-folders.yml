@@ -68,13 +68,13 @@ jobs:
             exit 1
           fi
           controller=AdityaSreevatsaK/Taiyou-Novels-Storage-Controller
-          test_branch="$(gh api "repos/$controller/branches/test/readable-folder-cross-repo-20261113" --jq '.commit.sha')"
-          accepted="$(gh api "repos/$controller/actions/workflows/readable-folder-acceptance.yml/runs?branch=test/readable-folder-cross-repo-20261113&status=success&per_page=1" --jq '.workflow_runs[0].head_sha // ""')"
+          test_branch="$(gh api "repos/$controller/branches/test/readable-folder-batch-acceptance-20261113" --jq '.commit.sha')"
+          accepted="$(gh api "repos/$controller/actions/workflows/readable-folder-acceptance.yml/runs?branch=test/readable-folder-batch-acceptance-20261113&status=success&per_page=1" --jq '.workflow_runs[0].head_sha // ""')"
           if [ -z "$accepted" ] || [ "$test_branch" != "$accepted" ]; then
             echo "::error::Live disposable private HF copy/delete/checksum acceptance has not passed for the latest test branch."
             exit 1
           fi
-          echo "Verified reader production deployment and successful real disposable private HF migration."
+          echo "Verified deployed reader master and REAL production-style multi-novel HF batch migration on the latest accepted test SHA."
       - name: Install tested Storage Controller dependencies
         run: python -m pip install -r requirements.txt
       - name: Run full regression suite before migration
