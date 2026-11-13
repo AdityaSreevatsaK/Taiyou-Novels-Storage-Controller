@@ -9,6 +9,8 @@ import unicodedata
 import zipfile
 from pathlib import Path
 
+from .paths import validate_book_paths
+
 DEFAULT_REPO = "AdityaSreevatsaK/Taiyous-Novels"
 
 
@@ -29,8 +31,10 @@ def validate_catalogue(value: object) -> list[dict]:
             raise StorageError("Invalid book ID")
         if ident in seen or item["metadata"].get("id") != ident:
             raise StorageError("Duplicated ID or mismatched metadata")
-        if item.get("epubPath") != f"data/novels/{ident}/source.epub":
-            raise StorageError("Unexpected EPUB path")
+        try:
+            validate_book_paths(item)
+        except (ValueError, KeyError, TypeError) as exc:
+            raise StorageError("Unexpected or unsafe novel storage path") from exc
         seen.add(ident)
         result.append(item)
     return result
