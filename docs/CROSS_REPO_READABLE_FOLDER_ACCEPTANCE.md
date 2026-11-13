@@ -80,3 +80,18 @@ against a live disposable Cloudflare environment.
 
 Reader PR #4 and the Storage Controller compatibility integration must be
 reviewed before a separate, verified-backup production migration is considered.
+
+
+## Verified live acceptance, 13 November 2026
+
+**PASS**: [Hugging Face integration run #43431262417](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/runs/43431262417).
+
+- The real private pre-created `AdityaSreevatsaK/Taiyou-Readable-Folder-Test` dataset was accessed with the dedicated repository-scoped secret.
+- Synthetic legacy and readable EPUBs, archives, PNG covers, extra file, catalogue, personal reviews, reading progress and collections all passed SHA-256 comparisons.
+- The actual Storage Controller performed a revision-bound folder copy/delete and catalogue update. Existing readable folders and immutable IDs were preserved.
+- A stale-parent personal-data overwrite was rejected.
+- The production migration guard refused the production dataset.
+- **Cleanup succeeded:** the only synthetic files created by this acceptance run were removed; the pre-created private dataset remains.
+- The cross-repository static validation job passed on the same workflow, and [CI #43431274374](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/runs/43431274374) passed all four Windows/Linux × Python 3.11/3.12 jobs.
+
+**Scope limitation:** This verifies the genuine Hugging Face migration transaction and Reader path/gateway contracts, but it is **not** a live Cloudflare Access/OAuth browser session against the disposable dataset. Reader deployment rollout and full production backup still require separate authorisation and verification before any production file migration.
