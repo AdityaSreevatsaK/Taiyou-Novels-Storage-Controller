@@ -88,7 +88,7 @@ def inspect(api, token: str) -> tuple[str, dict]:
             "data_files": sum(p.startswith("data/") for p in paths),
             "novel_directories": len({
                 match.group(1) for p in paths
-                if (match := re.match(r"^data/novels/([0-9a-f]{24})/", p))
+                if (match := re.match(r"^data/novels/([0-9a-f]{24})(?: - [^/]+)?/", p))
             }),
             "note": "Catalogue could not be validated; inspect privately before any reset",
         }
@@ -97,7 +97,7 @@ def inspect(api, token: str) -> tuple[str, dict]:
     titles_repeated = sum(count - 1 for key, count in counts.items() if key and count > 1)
     id_set = {b["id"] for b in books}
     remote_novel_ids = {match.group(1) for path in paths
-                        if (match := re.match(r"^data/novels/([0-9a-f]{24})/", path))}
+                        if (match := re.match(r"^data/novels/([0-9a-f]{24})(?: - [^/]+)?/", path))}
     missing_epubs = sum(b["epubPath"] not in paths for b in books)
     missing_zips = sum(bool(b.get("archivePath")) and b["archivePath"] not in paths
                        for b in books)
@@ -109,7 +109,7 @@ def inspect(api, token: str) -> tuple[str, dict]:
         "duplicate_normalised_titles": titles_repeated,
         "missing_epubs": missing_epubs,
         "missing_archives": missing_zips,
-        "cover_files": sum(bool(re.match(r"^data/novels/[0-9a-f]{24}/cover\.(jpg|jpeg|png|webp)$", p))
+        "cover_files": sum(bool(re.match(r"^data/novels/[0-9a-f]{24}(?: - [^/]+)?/cover\.(jpg|jpeg|png|webp)$", p))
                            for p in paths),
     }
     return revision, summary

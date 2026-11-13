@@ -18,6 +18,7 @@ from urllib.parse import urlsplit, urlunsplit
 import zipfile
 
 from .core import DEFAULT_REPO, normalized_title, validate_catalogue, write_csv
+from .paths import book_dir, COVER_SUFFIXES
 
 MAX_ARCHIVE = 512 * 1024 * 1024
 MAX_IMAGE = 12 * 1024 * 1024
@@ -214,11 +215,11 @@ def make_plan(covers: list[Cover], books: list[dict], remote_hashes: dict[str, s
                     raise CoverError("CONFLICT: multiple images target the same novel: " +
                                      matched_ids[book_id])
                 matched_ids[book_id] = cover.cover_file
-                dest = f"data/novels/{book_id}/cover{cover.extension}"
+                directory = book_dir(book)
+                dest = f"{directory}/cover{cover.extension}"
                 current = book["metadata"].get("coverPath")
-                if current and (not isinstance(current, str) or
-                        not current.startswith(f"data/novels/{book_id}/cover.") or
-                        PurePosixPath(current).suffix.lower() not in EXTENSIONS):
+                if current and current not in {
+                        f"{directory}/cover{suffix}" for suffix in COVER_SUFFIXES}:
                     raise CoverError("CONFLICT: unexpected existing coverPath")
                 identical = remote_hashes.get(dest) == cover.digest
                 if identical and current == dest:
