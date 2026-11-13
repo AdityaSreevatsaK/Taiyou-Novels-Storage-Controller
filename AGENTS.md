@@ -1372,3 +1372,27 @@ successful, explicitly triggered migration. A failure after some batches
 requires re-preview and resume, not a full dataset reset.
 
 See [the migration runbook](docs/READABLE_FOLDER_MIGRATION.md).
+
+
+### Updated November 2026 migration acceptance contract
+
+The latest live integration testing uses the **pre-created, PRIVATE** dataset
+`AdityaSreevatsaK/Taiyou-Readable-Folder-Test`, with `HF_DISPOSABLE_TEST_TOKEN`
+restricted to that dataset. The acceptance runner never creates or deletes HF
+repositories; it only adds then revision-safely removes its synthetic fixtures.
+
+The active test branch is `test/readable-folder-batch-acceptance-20261113`.
+It tests the actual production primitive `apply_migration_batch()` with
+two synthetic legacy books in one guarded commit, then another legacy book
+in a subsequent commit. It also covers an existing readable novel, collision
+blocking, post-batch re-planning, byte-integrity hashes, preserved personal
+sidecars and metadata, ID stability, stale revisions and exact-path cleanup.
+Do **not** delete that test branch while the production migration workflow
+uses it as its live-acceptance SHA gate.
+
+Production backup readiness is a separate concern. The default, read-only
+`HF - Readable folder migration backup readiness` workflow checks that the
+production target plan is valid and the *different private backup dataset*
+`AdityaSreevatsaK/Taiyous-Novels-Backup` is accessible. Manual snapshot mode
+copies and verifies each private file by SHA-256 but does **not** rename any
+novel. The actual production folder migration requires separate authorisation.
