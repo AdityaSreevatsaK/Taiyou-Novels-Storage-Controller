@@ -34,8 +34,9 @@ def book(book_id: str) -> dict:
 def paths(books: list[dict]) -> set[str]:
     files = {"data/library.json", "data/personal/collections.json"}
     for item in books:
-        files.update((item["epubPath"], item["archivePath"],
-                      item["metadata"]["coverPath"]))
+        files.update((item["epubPath"], item["archivePath"]))
+        if item["metadata"].get("coverPath"):
+            files.add(item["metadata"]["coverPath"])
     return files
 
 
