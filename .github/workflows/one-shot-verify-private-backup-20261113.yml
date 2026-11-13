@@ -34,32 +34,52 @@ jobs:
           python-version: '3.12'
       - name: Install pinned Storage Controller dependencies
         run: python -m pip install -r requirements.txt
-      - name: Check token, source and backup dataset privacy without printing contents
+      - name: Diagnose Storage Controller and test credential permissions (read-only)
         shell: bash
+        env:
+          HF_DISPOSABLE_TEST_TOKEN: ${{ secrets.HF_DISPOSABLE_TEST_TOKEN }}
         run: |
           python - <<'PY'
           import os
           from huggingface_hub import HfApi
-          token = os.environ.get("HF_TOKEN", "").strip()
-          if not token:
-              print("BLOCKED: HF_STORAGE_CONTROLLER_TOKEN is missing")
-              raise SystemExit(1)
+
+          storage = os.environ.get("HF_TOKEN", "").strip()
+          disposable = os.environ.get("HF_DISPOSABLE_TEST_TOKEN", "").strip()
           source = os.environ["SOURCE_REPO"]
           backup = os.environ["BACKUP_REPO"]
-          if source == backup:
-              raise SystemExit("BLOCKED: backup destination equals source")
-          api = HfApi(token=token)
-          for label, repo in (("SOURCE", source), ("BACKUP", backup)):
+          test_repo = "AdityaSreevatsaK/Taiyou-Readable-Folder-Test"
+          if source == backup or source == test_repo or backup == test_repo:
+              raise SystemExit("BLOCKED: source/test/backup repositories must differ")
+
+          def check(label, token, repo):
+              if not token:
+                  print(label + ": SECRET MISSING")
+                  return False
               try:
-                  info = api.dataset_info(repo_id=repo, token=token)
-              except Exception:
-                  print(label + " BLOCKED: private dataset is not accessible using HF_STORAGE_CONTROLLER_TOKEN")
-                  raise SystemExit(1)
-              if info.private is not True or not info.sha:
-                  print(label + " BLOCKED: cannot confirm PRIVATE dataset with a revision")
-                  raise SystemExit(1)
-              print(label + " PASS: correct PRIVATE dataset accessible (revision checked)")
-          print("Read access verified. Backup write permissions will be verified by the real snapshot.")
+                  info = HfApi(token=token).dataset_info(repo_id=repo, token=token)
+                  if info.private is True and info.sha:
+                      print(label + ": PASS, private repo accessible")
+                      return True
+                  print(label + ": FAILED, repo not verifiably private")
+                  return False
+              except Exception as exc:
+                  status = getattr(getattr(exc, "response", None), "status_code", None)
+                  if status in (401, 403, 404):
+                      print(label + f": ACCESS DENIED / NOT FOUND (HTTP {status})")
+                  else:
+                      print(label + f": UNAVAILABLE ({type(exc).__name__}; HTTP {status or 'unknown'})")
+                  return False
+
+          source_ok = check("STORAGE TOKEN to production source", storage, source)
+          backup_ok = check("STORAGE TOKEN to new private backup", storage, backup)
+          check("STORAGE TOKEN to disposable test dataset (not required)", storage, test_repo)
+          check("DISPOSABLE TEST TOKEN to disposable test dataset", disposable, test_repo)
+          if not source_ok or not backup_ok:
+              print("BLOCKED: no backup writes. Configure HF_STORAGE_CONTROLLER_TOKEN "
+                    "to read production AND read/write the PRIVATE backup dataset.")
+              raise SystemExit(1)
+          print("Both required private sources are readable; continuing to actual "
+                "checksum-verified backup, which validates write permissions.")
           PY
       - name: Refresh READ-ONLY production folder migration preview
         shell: bash
