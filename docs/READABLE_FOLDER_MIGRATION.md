@@ -2,7 +2,7 @@
 
 ## Goal and invariants
 
-The private dataset currently stores some novels as `data/novels/<id>/`. The new format is `data/novels/<id> - <sanitised-title>/`, so owners can recognise novels in the Hugging Face browser.
+The private dataset historically stored novels as `data/novels/<id>/`. The migrated format is `data/novels/<id> - <sanitised-title>/`, so owners can recognise novels in the Hugging Face browser.
 
 **Never change the 24-character book ID.** Reader progress, notes, ratings, tags, collections and other personal state remain keyed by that ID. Existing folder labels are historical display names: if a book is renamed later, its existing folder path stays unchanged.
 
@@ -61,9 +61,9 @@ GitHub workflow public logs must never include real novel titles, original filen
 
 The real disposable test uses the **manually created PRIVATE** dataset `AdityaSreevatsaK/Taiyou-Readable-Folder-Test`. `HF_DISPOSABLE_TEST_TOKEN` only needs **read/write permissions on that exact test dataset**. No repository creation or deletion permission is required. The runner refuses public, nonempty or other target datasets; it removes only its own synthetic files using a revision-guarded cleanup, retaining the test dataset.
 
-For the production backup, `HF_STORAGE_CONTROLLER_TOKEN` requires **read access** to `Taiyous-Novels` and **write access** to the separate **PRIVATE** `AdityaSreevatsaK/Taiyous-Novels-Backup` dataset. The 13 November read-only check could not access that backup dataset; it must be created privately by the owner or its token permissions corrected. The backup helper can create a missing private repo only with appropriate creation rights, but widening a production token merely to bypass a permission error is not recommended.
+For the production backup, `HF_STORAGE_CONTROLLER_TOKEN` requires **read access** to `Taiyous-Novels` and **write access** to the separate **PRIVATE** `AdityaSreevatsaK/Taiyous-Novels-Backup` dataset. Both permissions were verified for the completed 14 November production migration. The backup dataset must remain private; do not broaden token scopes unnecessarily.
 
-Until the live disposable acceptance has **actually passed**, the production migration workflow intentionally refuses production writes.
+The live disposable acceptance passed before production migration. The production workflow continues to enforce this gate for any future write.
 
 ## Useful files
 
@@ -77,10 +77,17 @@ Until the live disposable acceptance has **actually passed**, the production mig
 Do not treat adding this documentation or merging controller code as proof that existing production folders have actually been renamed. Confirm the production Hugging Face dataset inventory after a successful live migration.
 
 
-## Current coordination and production boundary
+## Historical coordination and production boundary
 
 - Reader `master` `45233f4854b657d146965cf71a38142289411b18` passed the existing production `Deploy Application` run `43404544333` with dual-format support and readable-folder creation for new browser uploads.
 - The earlier **read-only** production preview showed **89 legacy novel folders**, **zero collisions**, and no already-readable book folders. This is historical until the next read-only run refreshes it.
 - Live private integration on the manually created test dataset has verified `apply_one()` (run `43431262417`) and the production-style `apply_migration_batch()` over two consecutive commits (see the latest successful run on the consolidation branch).
 - The reader path/gateway tests are mocked. Successful deployment alone is **not proof** of an authenticated live EPUB/cover/archive browser session. An authenticated owner smoke test is required before production moves.
 - **Never invoke production migration apply** as part of testing, consolidation or backup-readiness checks. It requires a separate, explicit approval.
+
+
+## Completed migration: 14 November 2026
+
+The one-novel production pilot passed in run [43486112141](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/runs/43486112141). The final workflow [43558185178](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/runs/43558185178) succeeded with the remaining **88 novels in 11 batches**, each verifying every moved file by SHA-256. It preserved **all 89 stable novel IDs** and all personal sidecar paths, with a **221-file private snapshot** verified before writes. At the start of this final run, the production preview showed 88 legacy and 1 readable novel, with zero conflicts. The run's end-state validation required every book to be readable. Final private dataset revision prefix: `5d168f6e6a46`.
+
+The post-migration audit is recorded in [POST_MIGRATION_VERIFICATION_2026-11-14.md](POST_MIGRATION_VERIFICATION_2026-11-14.md). Do not rerun the write-mode workflow merely to check status. Use read-only preview. Both legacy and readable path formats remain supported for backwards compatibility; future title edits must not automatically rename existing folders.

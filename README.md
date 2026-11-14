@@ -57,7 +57,7 @@ py -m taiyou_storage.upload novels --apply         # Explicit noninteractive upl
 
 **New uploads now use readable Hugging Face folders by default:** `data/novels/<id> - <sanitised-title>/`. Existing novels keep their catalogue-declared path, whether ID-only or readable. Use `--legacy-new-folders` to opt out for an individual run. Your existing progress, personal metadata and stable IDs do not change.
 
-For existing ID-only folders, see the [migration guide](docs/READABLE_FOLDER_MIGRATION.md). The full production migration is a separate, backup-first manual workflow. **Do not run it until both the reader deployment and disposable private HF integration checks are confirmed.**
+**Production migration completed on 14 November 2026:** all 89 existing novels now use human-readable folders after a verified one-novel pilot and 88-novel final operation. All stable IDs, personal sidecar paths and per-file SHA-256 checks passed. See the [migration guide](docs/READABLE_FOLDER_MIGRATION.md) and [post-migration verification](docs/POST_MIGRATION_VERIFICATION_2026-11-14.md). The separate manual migration workflow remains available for future legacy folders, with explicit approval and verified-backup gates.
 
 An existing novel is matched by EPUB-derived ID or by an unambiguous normalised title **and** author. A successful match preserves the stable novel ID and app/user metadata, including progress, ratings, notes and personal tags. Missing genres in an older ZIP do not erase nonempty existing source genres.
 
@@ -76,7 +76,7 @@ py -m taiyou_storage.covers "C:\Downloads\Downloaded_Covers.zip"                
 py -m taiyou_storage.covers "C:\Downloads\Downloaded_Covers.zip" --interactive   # Preview and confirm
 ```
 
-Covers are linked only to **existing** novels. Matching prefers the source URL; ambiguous titles block updates. Images go under `data/novels/<book-id>/cover.<ext>`, with the catalogue's `metadata.coverPath` updated. The uploader does not delete covers of another extension, create books or alter EPUBs/ZIPs.
+Covers are linked only to **existing** novels. Matching prefers the source URL; ambiguous titles block updates. Images follow each book's **catalogue-declared folder**, which may be readable or legacy; the catalogue's `metadata.coverPath` is updated. The uploader does not delete covers of another extension, create books or alter EPUBs/ZIPs.
 
 - Default: **20 covers per atomic batch** (configurable up to 40). The cover files and catalogue changes commit together.
 - If a later batch fails, earlier committed batches remain. **Re-run the same ZIP** to skip already completed covers and resume.
