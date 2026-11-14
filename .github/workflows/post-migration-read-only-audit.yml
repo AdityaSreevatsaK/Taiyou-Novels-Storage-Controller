@@ -1,0 +1,49 @@
+name: "One-shot: post-migration read-only verification"
+
+on:
+  push:
+    branches:
+      - docs/post-migration-audit-20261114
+    paths:
+      - .github/workflows/post-migration-read-only-audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hf-storage-controller
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.repository == 'AdityaSreevatsaK/Taiyou-Novels-Storage-Controller'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Install tested dependencies and run regression suite
+        run: |
+          python -m pip install -r requirements.txt
+          python -m unittest discover -s tests -q
+      - name: Check live PRIVATE catalogue and readable-folder inventory without writes
+        shell: bash
+        env:
+          HF_TOKEN: ${{ secrets.HF_STORAGE_CONTROLLER_TOKEN }}
+          HF_READABLE_MIGRATION_APPLY: "false"
+          HF_MIGRATION_BACKUP_REPO: AdityaSreevatsaK/Taiyous-Novels-Backup
+          HF_HUB_DISABLE_PROGRESS_BARS: "1"
+        run: |
+          set -euo pipefail
+          python -m taiyou_storage.actions inspect
+          result="$(python -m taiyou_storage.migrate_production)"
+          printf '%s\n' "$result"
+          if ! grep -Fq "'MIGRATE': 0, 'ALREADY_READABLE': 89, 'CONFLICT': 0" <<< "$result"; then
+            echo "::error::Post-migration inventory does not match 89 readable books and zero remaining moves/conflicts"
+            exit 1
+          fi
+          echo "PASS: 89 readable books, zero remaining moves and zero conflicts" >> "$GITHUB_STEP_SUMMARY"
