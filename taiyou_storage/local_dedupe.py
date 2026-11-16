@@ -125,6 +125,33 @@ def _rank(row: dict):
     return (row["count"], timestamp, bool(row["cover"]), row["epub_hash"])
 
 
+
+def verified_remote_upgrade(local_item: tuple, remote_archive: Path) -> bool:
+    """Allow cover/metadata-only revisions or an append-only chapter upgrade.
+
+    Any changed existing chapter, truncated edition, unknown manifest, or
+    inconsistent remote identity is a conflict. Never alter the remote copy.
+    """
+    from .upload import read_novel
+    path, meta, epub, _ = local_item
+    remote_meta, remote_epub, _ = read_novel(Path(remote_archive))
+    original = inspect_zip(Path(remote_archive), remote_meta, remote_epub)
+    candidate = inspect_zip(Path(path), meta, epub)
+    if original["url"] and candidate["url"] and original["url"] != candidate["url"]:
+        return False
+    if (original["title_author"] and candidate["title_author"] and
+            original["title_author"] != candidate["title_author"]):
+        return False
+    if original["epub_hash"] == candidate["epub_hash"]:
+        # Matching EPUBs do not excuse contradictory TXT chapter manifests.
+        if original["chapters"] is not None and candidate["chapters"] is not None:
+            return original["chapters"] == candidate["chapters"]
+        return True
+    old, new = original["chapters"], candidate["chapters"]
+    if old is None or new is None or len(new) < len(old):
+        return False
+    return all(new.get(position) == digest for position, digest in old.items())
+
 def preflight(local: list[tuple], books: list[dict]) -> tuple[list[tuple], list[dict], list[dict]]:
     """Select one validated ZIP per real book and report every skipped/conflict.
 
