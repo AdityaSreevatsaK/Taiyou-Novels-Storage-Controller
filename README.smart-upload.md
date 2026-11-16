@@ -51,10 +51,13 @@ only when combining older individual ZIPs with a new Novel Retriever export.
 python -m taiyou_storage.upload novels --dedupe-local
 ~~~
 
-4. The preview shows selected novels, skipped **DUPLICATE** packages and
+4. On Windows, option **12** in 00_storage_menu.cmd runs this same
+   duplicate-aware interactive preflight. Option **1** retains its original
+   strict behaviour.
+5. The preview shows selected novels, skipped **DUPLICATE** packages and
    any **CONFLICT** entries. A conflict blocks all cloud writes, even if
    \`--apply\` was supplied. Conflicting editions require manual review.
-5. Only after reviewing the complete plan and verifying the private target
+6. Only after reviewing the complete plan and verifying the private target
    dataset, explicitly apply:
 
 ~~~powershell
