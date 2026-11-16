@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 from zipfile import ZipFile
 
-from taiyou_storage.local_dedupe import canonical_source, preflight
+from taiyou_storage.local_dedupe import canonical_source, preflight, verified_remote_upgrade
 from taiyou_storage.upload import (UploadError, main, matching_entry,
                                    merged_metadata, plan, read_novel)
 
@@ -16,7 +16,7 @@ from taiyou_storage.upload import (UploadError, main, matching_entry,
 def sample(root: Path, filename: str, *, chapter: str = "An original chapter",
            url: str = "https://novelfull.com/example.html",
            timestamp: str = "2026-11-14T12:00:00Z",
-           with_cover: bool = False) -> Path:
+           with_cover: bool = False, epub_cover_marker: bool = False) -> Path:
     original = io.BytesIO()
     with ZipFile(original, "w") as epub:
         epub.writestr("mimetype", "application/epub+zip")
@@ -25,6 +25,8 @@ def sample(root: Path, filename: str, *, chapter: str = "An original chapter",
         epub.writestr("book.opf",
                       '<package><metadata><title>Example</title><creator>Author</creator></metadata></package>')
         epub.writestr("chapter.xhtml", chapter)
+        if epub_cover_marker:
+            epub.writestr("OEBPS/cover.jpg", b"\xff\xd8\xff" + bytes(200))
     row = [{"position": 1, "file": "chapter_00001.txt",
             "sha256": hashlib.sha256(chapter.encode()).hexdigest()}]
     meta = {"title": "Example", "author": "Author", "source_url": url,
@@ -138,6 +140,43 @@ class LocalDeduplicationTests(unittest.TestCase):
             with (patch("taiyou_storage.core.load_remote", return_value=([], "a" * 40)),
                   patch("huggingface_hub.HfApi") as factory):
                 self.assertEqual(main([str(root), "--dedupe-local", "--apply"]), 2)
+                factory.return_value.create_commit.assert_not_called()
+
+    def test_cover_only_epub_change_allowed_against_existing_remote(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            old = sample(root, "remote.zip")
+            new = sample(root, "new.zip", epub_cover_marker=True)
+            self.assertTrue(verified_remote_upgrade(local(new), old))
+            self.assertNotEqual(local(new)[2], local(old)[2])
+
+    def test_changed_remote_chapter_requires_explicit_resolution(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            old = sample(root, "remote.zip", chapter="Previously saved chapter")
+            new = sample(root, "new.zip", chapter="Unrelated replacement text")
+            self.assertFalse(verified_remote_upgrade(local(new), old))
+
+    def test_remote_edition_conflict_blocks_all_uploads(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            old = sample(root, "original.zip", chapter="Previously saved chapter")
+            root2 = root / "incoming"
+            root2.mkdir()
+            sample(root2, "new.zip", chapter="Unrelated replacement text")
+            remote_entry = remote()
+            old_epub = root / "remote.epub"
+            with ZipFile(old) as book:
+                old_epub.write_bytes(book.read("novel/source.epub"))
+            def fake_download(*args, **kwargs):
+                return str(old if kwargs["filename"] == remote_entry["archivePath"] else old_epub)
+            with (patch("taiyou_storage.core.load_remote",
+                        return_value=([remote_entry], "a" * 40)),
+                  patch("huggingface_hub.HfApi") as factory,
+                  patch("huggingface_hub.hf_hub_download", side_effect=fake_download)):
+                factory.return_value.list_repo_files.return_value = [
+                    "data/library.json", remote_entry["archivePath"], remote_entry["epubPath"]]
+                self.assertEqual(main([str(root2), "--dedupe-local", "--apply"]), 2)
                 factory.return_value.create_commit.assert_not_called()
 
     def test_original_default_mode_rejects_duplicates(self):
