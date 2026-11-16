@@ -34,3 +34,43 @@ files atomically. Subsequent ZIPs append to it. If the dataset has any
 `data/` files but no catalogue, the uploader refuses to initialise so it
 cannot overwrite or orphan data. The dataset must be private and accessible
 to your configured HF token.
+
+
+## Optional deduplication for mixed old and new ZIPs
+
+**Default behaviour is unchanged:** two local ZIPs targeting the same book
+still block the entire upload. Use the new \`--dedupe-local\` flag explicitly
+only when combining older individual ZIPs with a new Novel Retriever export.
+
+1. Keep a safe copy of the original ZIPs; no local files are deleted.
+2. Extract the outer Retriever export ZIP. Put the individual novel ZIPs,
+   rather than the outer bundle, in your local \`novels/\` folder.
+3. Preview only:
+
+~~~powershell
+python -m taiyou_storage.upload novels --dedupe-local
+~~~
+
+4. The preview shows selected novels, skipped **DUPLICATE** packages and
+   any **CONFLICT** entries. A conflict blocks all cloud writes, even if
+   \`--apply\` was supplied. Conflicting editions require manual review.
+5. Only after reviewing the complete plan and verifying the private target
+   dataset, explicitly apply:
+
+~~~powershell
+python -m taiyou_storage.upload novels --dedupe-local --interactive
+~~~
+
+The preflight prioritises canonical HTTPS novel source identity, then exact
+normalised title and author; equivalent EPUB bytes or verified TXT chapter
+checksums are required to skip an old ZIP. Different chapter content is not
+silently replaced. The remote catalogue's existing novel ID and personal
+metadata remain authoritative. Cover-only EPUB changes do not generate new
+remote identities when the canonical source URL matches. Ratings, comments,
+progress, personal tags, collections and notes cannot be set by archive
+metadata during source updates.
+
+Existing private dataset checks, unexpected paths, missing catalogue
+protection, revision guards, local ZIP digests, manual approval and
+all-or-nothing batch conflict checks remain enabled. The feature is
+read-only in normal preview and does not modify the Novel Retriever repository.
