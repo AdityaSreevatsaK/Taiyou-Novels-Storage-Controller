@@ -434,10 +434,47 @@ def main(argv=None) -> int:
                 relevant_paths.add(f"{directory}/original.zip")
                 relevant_paths.add(f"{directory}/source.epub")
         hashes = {}
+        cached_paths = {}
         for remote_path in sorted(relevant_paths & files):
             cached = hf_hub_download(repo_id=args.repo, filename=remote_path,
                                      repo_type="dataset", revision=sha)
             hashes[remote_path] = sha256_file(Path(cached))
+            cached_paths[remote_path] = Path(cached)
+        if args.dedupe_local:
+            from .local_dedupe import verified_remote_upgrade
+            remote_conflicts = []
+            for item in local:
+                path, meta, epub, digest = item
+                try:
+                    entry, _ = matching_entry(books, meta, epub)
+                except UploadError as exc:
+                    remote_conflicts.append(f"{path.name}: {exc}")
+                    continue
+                if not entry:
+                    continue
+                directory = book_dir(entry)
+                archive = f"{directory}/original.zip"
+                epub_path = f"{directory}/source.epub"
+                if (hashes.get(archive) == digest or
+                        hashes.get(epub_path) == hashlib.sha256(epub).hexdigest()):
+                    continue
+                if archive not in cached_paths:
+                    remote_conflicts.append(
+                        f"{path.name}: existing remote archive unavailable for edition comparison")
+                    continue
+                try:
+                    verified = verified_remote_upgrade(item, cached_paths[archive])
+                except (UploadError, ValueError, OSError, zipfile.BadZipFile, KeyError) as exc:
+                    remote_conflicts.append(f"{path.name}: remote book validation failed: {exc}")
+                    continue
+                if not verified:
+                    remote_conflicts.append(
+                        f"{path.name}: incoming chapters differ from the stored HF edition")
+            for message in remote_conflicts:
+                print(f"[CONFLICT] {message}")
+            if remote_conflicts:
+                print("Remote edition conflicts: all writes blocked.", file=sys.stderr)
+                return 2
         instructions = plan(books, local, hashes, files,
                             readable_new=(not args.legacy_new_folders or args.readable_folders))
         for item in instructions:
