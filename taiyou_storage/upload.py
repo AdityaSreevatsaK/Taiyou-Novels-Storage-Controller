@@ -155,18 +155,48 @@ def read_novel(path: Path) -> tuple[dict, bytes, str]:
 
 
 def matching_entry(books: list[dict], meta: dict, epub: bytes) -> tuple[dict | None, str]:
+    # Import locally: local_dedupe consumes the uploader's ZIP safety helpers.
+    from .local_dedupe import canonical_source
+    source = canonical_source(meta.get("sourceUrl"))
+    if source:
+        source_matches = [
+            item for item in books
+            if canonical_source(item["metadata"].get("sourceUrl")) == source
+        ]
+        if len(source_matches) > 1:
+            raise UploadError("CONFLICT: multiple remote entries share this canonical source URL")
+        if source_matches:
+            entry = source_matches[0]
+            old_author = normalized_title(str(entry["metadata"].get("author") or ""))
+            new_author = normalized_title(str(meta.get("author") or ""))
+            if old_author and new_author and old_author != new_author:
+                raise UploadError("CONFLICT: source URL matches but author differs")
+            return entry, "source-url"
     epub_id = hashlib.sha256(epub).hexdigest()[:24]
-    ids = [b for b in books if b["id"] == epub_id]
+    ids = [item for item in books if item["id"] == epub_id]
+    if len(ids) > 1:
+        raise UploadError("CONFLICT: duplicate remote EPUB ID")
     if len(ids) == 1:
+        remote = canonical_source(ids[0]["metadata"].get("sourceUrl"))
+        if source and remote and source != remote:
+            raise UploadError("CONFLICT: EPUB ID matches but canonical source URL differs")
         return ids[0], "epub-id"
     title = normalized_title(meta["title"])
-    title_matches = [b for b in books if normalized_title(str(b["metadata"].get("title", ""))) == title]
+    title_matches = [
+        item for item in books
+        if normalized_title(str(item["metadata"].get("title", ""))) == title
+    ]
     if not title_matches:
         return None, "new"
-    same_author = [b for b in title_matches if
-                   normalized_title(str(b["metadata"].get("author", ""))) ==
-                   normalized_title(str(meta.get("author", "")))]
+    same_author = [
+        item for item in title_matches
+        if normalized_title(str(item["metadata"].get("author", ""))) ==
+           normalized_title(str(meta.get("author", "")))
+    ]
     if len(title_matches) == 1 and len(same_author) == 1:
+        remote_source = canonical_source(same_author[0]["metadata"].get("sourceUrl"))
+        if source and remote_source and source != remote_source:
+            raise UploadError("CONFLICT: same title/author but different canonical source URL")
         return same_author[0], "title-author"
     raise UploadError("CONFLICT: title exists with different or ambiguous author; manual review required")
 
@@ -211,9 +241,17 @@ def plan(books: list[dict], local: list[tuple[Path, dict, bytes, str]],
 
 
 def merged_metadata(old: dict | None, new: dict, chosen_id: str) -> dict:
-    # Preserve all existing app/user-managed fields unless they are source-managed.
+    # Only source-managed fields may be refreshed by an imported ZIP.
+    # User data (progress, comments, ratings, personal tags, collections,
+    # notes and future app fields) is always retained from the catalogue.
+    source_fields = {
+        "title", "author", "language", "description", "status", "sourceUrl",
+        "chapterCount", "sourceTags", "size", "cloud", "metadataScanned",
+        "originalFileName",
+    }
     result = dict(old or {})
-    result.update(new)
+    result.update({key: value for key, value in new.items()
+                   if key in source_fields})
     # Older ZIPs may omit source genres that were safely backfilled later.
     # Missing/empty incoming tags must not erase already verified genres.
     if old and old.get("sourceTags") and not new.get("sourceTags"):
@@ -335,6 +373,8 @@ def main(argv=None) -> int:
     parser.add_argument("folder", nargs="?", default="novels")
     parser.add_argument("--repo", default=DEFAULT_REPO)
     parser.add_argument("--recursive", action="store_true")
+    parser.add_argument("--dedupe-local", action="store_true",
+                        help="Opt-in read-only preflight: skip verified equivalent local ZIPs; block conflicting editions")
     parser.add_argument("--readable-folders", action="store_true",
                         help="Explicitly use ID - Title folders for new novels (now the default)")
     parser.add_argument("--legacy-new-folders", action="store_true",
@@ -367,6 +407,18 @@ def main(argv=None) -> int:
         from .core import load_remote
         api = HfApi()
         books, sha = load_remote(args.repo, allow_empty=True)
+        if args.dedupe_local:
+            from .local_dedupe import preflight
+            local, duplicates, conflicts = preflight(local, books)
+            for duplicate in duplicates:
+                print(f"[DUPLICATE] {duplicate['file']} => {duplicate['preferred']}")
+            for conflict in conflicts:
+                print(f"[CONFLICT] {conflict['file']}: {conflict['reason']} (against {conflict['against']})")
+            print(f"Local preflight: {len(local)} selected, {len(duplicates)} duplicates, "
+                  f"{len(conflicts)} conflicting editions")
+            if conflicts:
+                print("Conflicting local editions: all remote writes blocked.", file=sys.stderr)
+                return 2
         files = set(api.list_repo_files(repo_id=args.repo, repo_type="dataset", revision=sha))
         if "data/library.json" not in files:
             print("[NEW PRIVATE DATASET] Initial library catalogue will be created on first upload.")
