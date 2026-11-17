@@ -92,9 +92,16 @@ Inspection and one-time backfill now use a dedicated, marked Hub cache at
 used by these inspections; uploading novellas and unrelated programmes retain
 their own caching behaviour.
 
-Use `18_cleanup_inspection_downloads.cmd` to preview the size and
-`18_cleanup_inspection_downloads.cmd --apply` to request local interactive
-deletion. The cleaner refuses an unmarked directory or another dataset's marker.
+**Double-click `18_cleanup_inspection_downloads.cmd` or select menu option 18**
+to inspect both recent and legacy cached novel files, review the preview and
+type `DELETE LOCAL CACHE` to confirm local deletion. This is an interactive
+flow: closing the window or declining leaves all cached files untouched.
+
+Advanced command-line use retains preview-first semantics:
+`18_cleanup_inspection_downloads.cmd --legacy-shared-cache` previews both cache
+locations; add `--apply` to confirm deletion. To delete **only** the owned
+inspection cache, use `18_cleanup_inspection_downloads.cmd --apply`.
+The cleaner refuses an unmarked directory or another dataset's marker.
 
 Files downloaded by **older versions** of the inspection scripts may be
 inside the shared HF cache. Run:
@@ -112,8 +119,8 @@ originally downloaded those cache entries**, so other local tools may need to
 re-download them. It never deletes the shared catalogue, sidecar manifests,
 another dataset, untracked exports or any files on HF.
 
-Both modes default to dry run and require typing `DELETE LOCAL CACHE` before
-deletion. Stop all inspection/upload processes first. An `hf_xet` shared chunk
+The Python CLI and explicit CMD arguments default to dry run. Double-click mode
+passes `--apply` but still requires typing `DELETE LOCAL CACHE` before deletion. Stop all inspection/upload processes first. An `hf_xet` shared chunk
 cache is separately managed by Hugging Face and is not erased by this tool.
 
 ## Understanding the cover audit
