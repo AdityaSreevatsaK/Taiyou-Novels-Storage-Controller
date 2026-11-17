@@ -189,6 +189,9 @@ def valid_image(data: bytes, suffix: str) -> bool:
 def embedded_cover(epub: Path) -> bool:
     """Require an explicit OPF cover declaration, not an arbitrary EPUB image."""
     with zipfile.ZipFile(epub) as z:
+        validate_zip_budget(z, epub=True)
+        if z.getinfo("META-INF/container.xml").file_size > 1024 * 1024:
+            return False
         root = ET.fromstring(z.read("META-INF/container.xml"))
         entry = next((e for e in root.iter() if e.tag.endswith("rootfile")), None)
         opf = entry.get("full-path") if entry is not None else None
@@ -447,7 +450,7 @@ def scan(backend: HFReadOnly, mode: str = "quick", cache_root: Path | None = Non
                                 "Repair the catalogue record")])
         cached = None
         if cache_root is not None and mode == "deep":
-            fingerprint = hashlib.sha256((snapshot.revision + "|" + ident + "|" +
+            fingerprint = hashlib.sha256(("inspection-v2|" + snapshot.revision + "|" + ident + "|" +
                                            json.dumps(item, sort_keys=True, ensure_ascii=False)).encode()).hexdigest()
             cached = cache_root / snapshot.revision / (fingerprint + ".json")
             if cached.exists():
@@ -602,15 +605,20 @@ def compare_retriever(rows: list[dict], registry: dict | None,
                 continue
             known.add(key)
             status, ids, reason = match(item)
-            recorded = any(isinstance(d, dict) and d.get("status") == "complete"
-                           for d in item.get("downloads", []) if isinstance(item.get("downloads", []), list))
+            downloads = item.get("downloads") if isinstance(item.get("downloads"), list) else []
+            completed = [d for d in downloads if isinstance(d, dict) and d.get("status") == "complete"]
+            recorded = bool(completed)
+            partial = recorded and all(str(d.get("range") or "all").casefold() != "all"
+                                       for d in completed)
             output.append({"title": str(item.get("title") or ""), "author": str(item.get("author") or ""),
                            "source_url": str(item.get("url") or item.get("source_url") or ""),
                            "state": ("ALREADY_IN_HF" if status == "ALREADY_IN_HF" else
                                      "AMBIGUOUS" if status == "AMBIGUOUS" else
+                                     "PARTIALLY_DOWNLOADED" if partial else
                                      "DOWNLOADED_NOT_UPLOADED" if recorded else "TO_DOWNLOAD"),
                            "hf_ids": ids, "reason": reason,
-                           "download_recorded": recorded})
+                           "download_recorded": recorded,
+                           "download_ranges": [str(d.get("range") or "unknown") for d in completed]})
     # Hashes are local-only, intentionally without titles or novel IDs.
     hashes = sorted({hashlib.sha256(url.encode("utf-8")).hexdigest()
                      for row in rows if (url := canonical_url(row.get("source_url")))})
