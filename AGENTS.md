@@ -20,8 +20,8 @@
 
 The former 05 integrity placeholder has been replaced by a functional,
 **read-only** inspection engine in taiyou_storage/inspection.py and
-taiyou_storage/inspection_cli.py. Windows launchers 13 (chapter inventory),
-14 (cover audit), 15 (local Novel Retriever comparison), 16 (HTML health)
+taiyou_storage/inspection_cli.py. Windows launchers 12 (chapter inventory),
+13 (cover audit), 14 (local Novel Retriever comparison), 15 (HTML health)
 and 05 (integrity verification) all share this engine.
 
 Read docs/LIBRARY_INSPECTION.md before changing scan logic. All HF access is

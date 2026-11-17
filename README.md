@@ -17,7 +17,7 @@ Windows-friendly utilities for managing **Taiyou's Personal Library** files in t
 3. Create a local `novels/` folder and put your prepared novel ZIP files inside.
 4. Run **`00_storage_menu.cmd`** or launch **`01_bulk_upload.cmd`** directly.
 
-The upload launchers preview the actual changes and require you to type **YES** before committing. A bare Python CLI invocation is **read-only by default**; `--apply` explicitly writes without a prompt, while `--interactive` previews and asks for confirmation within the same process.
+The uploader previews changes, skips verified-equivalent local ZIPs and blocks conflicting editions. It requires you to type **YES** before committing. A bare Python CLI invocation is **read-only by default**; `--apply` explicitly writes without a prompt, while `--interactive` previews and asks for confirmation within the same process.
 
 **Different private dataset?** Pass `--repo OWNER/PRIVATE-DATASET` to the Python CLI. The catalogue-management, cover and reset tools also support the `HF_DATASET_REPO` environment variable. **The novel uploader does not read that environment variable**: it requires `--repo` for an override. Confirm the target in your preview.
 
@@ -30,17 +30,17 @@ Passing `--help` to an inspection command exits without pausing, for automation.
 
 | Windows launcher | Purpose |
 |---|---|
-| **`01_bulk_upload.cmd`** | Preview, confirm and incrementally upload novel ZIPs |
+| **`01_bulk_upload.cmd`** | Preview, verify local duplicates, skip equivalent ZIPs, block conflicting editions, and incrementally upload novel ZIPs |
 | `02_download_all.cmd` | Download existing original ZIPs to `downloads/` |
 | `03_list_novels.cmd` | Export a local CSV of catalogue entries |
 | `04_detect_conflicts.cmd` | Report exact/normalised duplicate titles |
 | **`05_verify_integrity.cmd`** | Fast remote manifest verification by default; use `--mode deep` for byte-level archive/EPUB inspection |
-| `13_export_novel_inventory.cmd` | Chapter ranges and missing positions from verified sidecars, CSV and JSON |
-| `14_audit_missing_covers.cmd` | Actionable `missing-covers.csv` plus full `cover-audit.csv`, distinguishing file presence from verified image integrity |
-| `15_compare_retriever_inventory.cmd` | Compare local Retriever registry and produce private exclusion hashes |
-| `16_library_health_report.cmd` | Local HTML dashboard, JSON and CSV |
-| **`17_backfill_inspection_manifests.cmd`** | Preview and safely migrate existing books to tiny inspection manifests; explicit `--interactive` or `--apply` to write |
-| **`18_cleanup_inspection_downloads.cmd`** | Preview and delete local-only inspection download cache; optionally target older shared HF novel files |
+| `12_export_novel_inventory.cmd` | Chapter ranges and missing positions from verified sidecars, CSV and JSON |
+| `13_audit_missing_covers.cmd` | Actionable `missing-covers.csv` plus full `cover-audit.csv`, distinguishing file presence from verified image integrity |
+| `14_compare_retriever_inventory.cmd` | Compare local Retriever registry and produce private exclusion hashes |
+| `15_library_health_report.cmd` | Local HTML dashboard, JSON and CSV |
+| **`16_backfill_inspection_manifests.cmd`** | Preview and safely migrate existing books to tiny inspection manifests; explicit `--interactive` or `--apply` to write |
+| **`17_cleanup_inspection_downloads.cmd`** | Preview and delete local-only inspection download cache; optionally target older shared HF novel files |
 | `06_sync_status.cmd` | Compare local EPUB-derived IDs with remote IDs; **not** full byte verification |
 | `07_backup_catalogue.cmd` | Save a local copy of `data/library.json` |
 | **`10_upload_covers.cmd`** | Import covers with preview, confirmation and resumable batches |
@@ -50,7 +50,7 @@ Passing `--help` to an inspection command exits without pausing, for automation.
 
 ## Inspection downloads and local cleanup
 
-**Double-click `18_cleanup_inspection_downloads.cmd` or choose menu option 18:**
+**Double-click `17_cleanup_inspection_downloads.cmd` or choose menu option 17:**
 The script scans recent inspection downloads **and** earlier cached HF novel files,
 shows what is eligible for deletion, and requires you to type
 `DELETE LOCAL CACHE` before deleting anything. It never deletes files from HF.
@@ -61,8 +61,8 @@ Full `--mode deep` checks and one-time backfills download novel content to
 It is safe to clear after all inspections stop, but deep checks will need the files again.
 
 ~~~powershell
-.\\18_cleanup_inspection_downloads.cmd
-.\\18_cleanup_inspection_downloads.cmd --apply
+.\\17_cleanup_inspection_downloads.cmd
+.\\17_cleanup_inspection_downloads.cmd --apply
 ~~~
 
 For large novel EPUB/ZIP/cover files cached by older inspection scripts in the
@@ -70,8 +70,8 @@ For large novel EPUB/ZIP/cover files cached by older inspection scripts in the
 novel binaries and covers:
 
 ~~~powershell
-.\\18_cleanup_inspection_downloads.cmd --legacy-shared-cache
-.\\18_cleanup_inspection_downloads.cmd --legacy-shared-cache --apply
+.\\17_cleanup_inspection_downloads.cmd --legacy-shared-cache
+.\\17_cleanup_inspection_downloads.cmd --legacy-shared-cache --apply
 ~~~
 
 Deletion requires a local interactive confirmation and **only affects your computer**.
@@ -108,11 +108,11 @@ A novel is labelled **UNCHANGED** only when its original ZIP, stored EPUB and so
 
 The first upload can initialise a brand-new **private** dataset. If a dataset already contains `data/` objects but lacks `data/library.json`, the uploader **refuses** to initialise over potentially orphaned data. Changes to both title and EPUB may be impossible to identify confidently; review any possible duplicates manually.
 
-See [smart upload details](README.smart-upload.md) for compatibility and matching caveats.
+The Windows `01_bulk_upload.cmd` automatically enables verified local deduplication; direct Python commands require `--dedupe-local` to enable it. See [smart upload details](README.smart-upload.md) for matching caveats.
 
 ## Read-only library inspection
 
-Run the **13–16** tools directly or via the menu. All reports remain in the ignored local `reports/` directory and must never be committed to this public repository. Use --mode quick for faster catalogue/file listing checks; default deep mode validates EPUB, ZIP, chapter files and images. An older EPUB without a verified manifest remains `UNVERIFIED`, never assumed complete from its chapter count.
+Run the **12–15** tools directly or via the menu. All reports remain in the ignored local `reports/` directory and must never be committed to this public repository. Use --mode quick for faster catalogue/file listing checks; default manifest mode avoids binary downloads; `--mode deep` validates EPUB, ZIP, chapter files and images. An older EPUB without a verified manifest remains `UNVERIFIED`, never assumed complete from its chapter count.
 
 For the Retriever comparison, keep a local `Novel-Retriever` checkout next to this controller, or pass `--retriever-root PATH`. Automatic skipping in Retriever is a separate change. See [inspection guide](docs/LIBRARY_INSPECTION.md) for evidence semantics, privacy and usage.
 

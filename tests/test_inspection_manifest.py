@@ -247,7 +247,7 @@ class BackfillTests(unittest.TestCase):
 
     def test_windows_backfill_launcher_exists(self):
         root = Path(__file__).resolve().parents[1]
-        text = (root / "17_backfill_inspection_manifests.cmd").read_text()
+        text = (root / "16_backfill_inspection_manifests.cmd").read_text()
         self.assertIn("taiyou_storage.manifest_backfill", text)
         self.assertIn("%*", text)
 

@@ -391,7 +391,7 @@ class InspectionTests(unittest.TestCase):
 class WindowsLauncherTests(unittest.TestCase):
     def test_launchers_reference_local_engine(self):
         root = Path(__file__).resolve().parents[1]
-        for number in ("05", "13", "14", "15", "16"):
+        for number in ("05", "12", "13", "14", "15"):
             files = list(root.glob(number + "_*.cmd"))
             self.assertEqual(len(files), 1)
             content = files[0].read_text(encoding="utf-8").lower()
@@ -402,7 +402,7 @@ class WindowsLauncherTests(unittest.TestCase):
     @unittest.skipUnless(sys.platform == "win32", "CMD execution only on Windows")
     def test_windows_launcher_help_runs_without_network(self):
         root = Path(__file__).resolve().parents[1]
-        p = subprocess.run(["cmd", "/c", str(root / "13_export_novel_inventory.cmd"), "--help"],
+        p = subprocess.run(["cmd", "/c", str(root / "12_export_novel_inventory.cmd"), "--help"],
                            capture_output=True, text=True, cwd=root, timeout=15)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertIn("--mode", p.stdout)

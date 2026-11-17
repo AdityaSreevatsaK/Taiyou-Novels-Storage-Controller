@@ -1,6 +1,6 @@
 # Private library inspection and integrity
 
-Launchers 05 and 13 to 16 use one read-only inspection engine. Launcher 17 is a separate explicit-write migration. Reports and revision caches
+Launchers 05 and 12 to 15 use one read-only inspection engine. Launcher 16 is a separate explicit-write migration. Reports and revision caches
 stay **local** inside the gitignored reports/ directory. Never commit, publish or
 upload private reports to GitHub Actions artefacts.
 
@@ -11,11 +11,11 @@ Authenticate using: hf auth login
 
 | Launcher | Local output |
 | --- | --- |
-| 13_export_novel_inventory.cmd --mode deep | novel-inventory.csv and .json |
-| 14_audit_missing_covers.cmd | missing-covers.csv (attention only) and cover-audit.csv (all novels) |
-| 15_compare_retriever_inventory.cmd | retriever-comparison.csv, .json, retriever-exclusions.json |
+| 12_export_novel_inventory.cmd --mode deep | novel-inventory.csv and .json |
+| 13_audit_missing_covers.cmd | missing-covers.csv (attention only) and cover-audit.csv (all novels) |
+| 14_compare_retriever_inventory.cmd | retriever-comparison.csv, .json, retriever-exclusions.json |
 | 05_verify_integrity.cmd | integrity-report.csv and .json |
-| 16_library_health_report.cmd --mode deep | library-health.html, .json and .csv |
+| 15_library_health_report.cmd --mode deep | library-health.html, .json and .csv |
 
 All output is written under reports/. Every inspection command now defaults to **manifest** mode,
 which downloads only the catalogue and small per-novel inspection manifests. It does not download
@@ -92,23 +92,23 @@ Inspection and one-time backfill now use a dedicated, marked Hub cache at
 used by these inspections; uploading novellas and unrelated programmes retain
 their own caching behaviour.
 
-**Double-click `18_cleanup_inspection_downloads.cmd` or select menu option 18**
+**Double-click `17_cleanup_inspection_downloads.cmd` or select menu option 17**
 to inspect both recent and legacy cached novel files, review the preview and
 type `DELETE LOCAL CACHE` to confirm local deletion. This is an interactive
 flow: closing the window or declining leaves all cached files untouched.
 
 Advanced command-line use retains preview-first semantics:
-`18_cleanup_inspection_downloads.cmd --legacy-shared-cache` previews both cache
+`17_cleanup_inspection_downloads.cmd --legacy-shared-cache` previews both cache
 locations; add `--apply` to confirm deletion. To delete **only** the owned
-inspection cache, use `18_cleanup_inspection_downloads.cmd --apply`.
+inspection cache, use `17_cleanup_inspection_downloads.cmd --apply`.
 The cleaner refuses an unmarked directory or another dataset's marker.
 
 Files downloaded by **older versions** of the inspection scripts may be
 inside the shared HF cache. Run:
 
 ~~~powershell
-.\\18_cleanup_inspection_downloads.cmd --legacy-shared-cache
-.\\18_cleanup_inspection_downloads.cmd --legacy-shared-cache --apply
+.\\17_cleanup_inspection_downloads.cmd --legacy-shared-cache
+.\\17_cleanup_inspection_downloads.cmd --legacy-shared-cache --apply
 ~~~
 
 This extra flag precisely selects cached `data/novels/**/source.epub`,
@@ -125,7 +125,7 @@ cache is separately managed by Hugging Face and is not erased by this tool.
 
 ## Understanding the cover audit
 
-`14_audit_missing_covers.cmd` produces two different local reports:
+`13_audit_missing_covers.cmd` produces two different local reports:
 
 - **missing-covers.csv:** only novels requiring attention because a standalone
   cover is absent, its catalogue reference is broken, a placeholder is suspected,
@@ -143,5 +143,5 @@ The **recommended_action** column tells you what to do next.
 
 Routine cover audits use remote file metadata and small manifests only; they
 do **not** need to download every novel. For byte-level image/EPUB inspection,
-run `14_audit_missing_covers.cmd --mode deep`. A deep check does download
+run `13_audit_missing_covers.cmd --mode deep`. A deep check does download
 relevant files to the isolated inspection cache.
