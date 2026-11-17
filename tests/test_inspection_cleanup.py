@@ -55,6 +55,16 @@ class CleanupTests(unittest.TestCase):
                 self.assertEqual(run(["--reports-dir", tmp, "--apply"]), 0)
             self.assertFalse(directory.exists())
 
+    def test_pinned_huggingface_cache_api_supports_file_level_deletion(self):
+        # This exercises the REAL installed dependency rather than a mock
+        # with a fictional method. It never deletes any cache files.
+        from huggingface_hub import scan_cache_dir
+        with tempfile.TemporaryDirectory() as cache:
+            info = scan_cache_dir(cache)
+        self.assertTrue(
+            callable(getattr(info, "delete_files", None)),
+            "Pinned huggingface_hub must support safe per-file cache cleanup")
+
     def test_legacy_selects_only_target_repo_novel_binaries(self):
         base = Path("cache/snapshots/abc")
         def item(name):
