@@ -172,11 +172,13 @@ Manual workflows include:
 
 | Workflow | Operation |
 |---|---|
-| **HF - Inspect library (read only)** | Private catalogue health/counts; no writes |
+| **HF - Run library checks (read only)** | One-click chapter, cover, integrity, duplicate and health checks; counts only in public logs, no HF writes |
 | **HF - Back up entire dataset PRIVATELY** | Verified snapshot to a separate **private** dataset |
 | **HF - Export novel names and conflicts PRIVATELY** | Private CSV reports to that backup dataset |
-| **HF - Upload covers from Novel_Library artifact** | Preview by default; opt-in cover import |
+| **HF - Upload covers from Novel-Retriever artifact** | Preview by default; opt-in cover import |
 | **HF - Restore novel genres from original download artifacts** | Separate, opt-in historical metadata repair |
+
+Run the [private library checks Action](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/workflows/hf-inspect.yml) on `master`: select **manifest** for lightweight remote checks or **deep** for byte-level checks. The Action only publishes numerical summaries; detailed, sensitive per-novel reports stay local to your Windows computer. Completed one-shot migration and obsolete branch-cleanup workflows have been retired.
 
 Refer to [Actions setup and security](docs/GITHUB_ACTIONS.md) for secrets and permissions, and [genre repair documentation](docs/GENRE_REPAIR.md) for that separate process. CI runs entirely offline and cannot write to the real novel dataset.
 

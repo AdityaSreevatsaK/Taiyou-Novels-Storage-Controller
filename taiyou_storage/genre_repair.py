@@ -22,7 +22,7 @@ from zipfile import BadZipFile, ZipFile
 
 from .core import DEFAULT_REPO, validate_catalogue
 
-UPSTREAM_REPO = "RichardDaffern/Novel_Library"
+UPSTREAM_REPO = "RichardDaffern/Novel-Retriever"
 GITHUB_API = f"https://api.github.com/repos/{UPSTREAM_REPO}"
 STATUS = {"completed": "Completed", "complete": "Completed", "ongoing": "Ongoing",
           "in progress": "Ongoing", "in-progress": "Ongoing"}
