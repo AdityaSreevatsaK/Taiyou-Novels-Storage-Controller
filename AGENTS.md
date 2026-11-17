@@ -16,6 +16,26 @@
 
 ---
 
+## GitHub Actions cleanup and one-click inspections, 17 November 2026
+
+The supported manual inspection workflow is now `.github/workflows/hf-inspect.yml`
+("HF - Run library checks (read only)"). It invokes
+`python -m taiyou_storage.github_checks`, runs one revision-pinned scan for
+chapter inventory, cover audit, integrity, duplicates and health, and publishes
+**numeric counts only** to public logs and the GitHub step summary. Per-novel
+CSV/JSON/HTML files and raw exception text never leave the ephemeral runner.
+A dedicated read-only `HF_INSPECTION_READ_TOKEN` is preferred; the established
+`HF_STORAGE_CONTROLLER_TOKEN` is a fallback if no read-only token is set.
+GitHub checks have no HF write capability; they do not access local Windows ZIPs.
+
+**Retired after the completed 14 November folder migration:** one-shot pilot,
+backup verification, branch pruning, readable migration acceptance, readiness,
+preflight and production migration Actions. Historical docs/scripts remain for
+reference, but the removed workflows must not be represented as runnable.
+Retain CI, count-only checks, private backup/export, cover import, specialised
+genre repair and code-only release workflows. Never expose private per-novel
+results as public Actions artefacts.
+
 ## Inspection toolkit update, 17 November 2026
 
 The former 05 integrity placeholder has been replaced by a functional,
@@ -191,10 +211,9 @@ Taiyou-Novels-Storage-Controller/
     ├── hf-upload-covers-artifact.yml
     ├── hf-restore-genres.yml
     ├── release.yml
-    └── prune-reviewed-branches.yml  # Historical one-shot branch cleanup
 ```
 
-The `prune-reviewed-branches.yml` file remains in the repository after its one-time execution, but its path-limited push trigger is **not** a recurring cleanup mechanism. Do not change or re-trigger it casually.
+The historical branch-prune and migration workflows have been retired. Re-enable none of them without a fresh review.
 
 ## 3. Core architectural decisions
 
@@ -921,13 +940,12 @@ If modifying a launcher, preserve exit-code propagation, quoting for paths with 
 | Workflow file | Trigger | What it does |
 |---|---|---|
 | `.github/workflows/ci.yml` | Push to `master`, pull requests, manual dispatch | Offline Python test matrix, compile, dependency checks |
-| `hf-inspect.yml` | Manual `workflow_dispatch` | Read-only private dataset inspection; prints counts only |
+| `hf-inspect.yml` | Manual `workflow_dispatch` | Combined chapter, cover, integrity and health checks; public summary contains counts only |
 | `hf-private-backup.yml` | Manual | Copies and verifies private snapshot into a separate private HF dataset |
 | `hf-private-reports.yml` | Manual | Writes sensitive reports to a separate private HF dataset |
-| `hf-upload-covers-artifact.yml` | Manual with run ID and apply checkbox | Imports cover-only artifacts from Novel_Library |
+| `hf-upload-covers-artifact.yml` | Manual with run ID and apply checkbox | Imports cover-only artifacts from Novel-Retriever |
 | `hf-restore-genres.yml` | Manual with apply checkbox | Independent historical genre repair |
 | `release.yml` | Completed successful `master` push CI workflow | Creates a guarded version tag and public code-only GitHub Release |
-| `prune-reviewed-branches.yml` | A push to `master` changing **that exact workflow path** | Historical, allowlisted one-shot removal of audited merged branches |
 
 There is **no active backup-free cloud-clearing workflow**. The old `hf-clear-data.yml` was deliberately deleted. Avoid reintroducing broad destruction capabilities through a new filename or different module.
 
@@ -935,7 +953,7 @@ There is **no active backup-free cloud-clearing workflow**. The old `hf-clear-da
 
 - Read-only Actions use `permissions: contents: read` unless explicitly justified otherwise.
 - The release publisher needs `contents: write` to create tags and releases, but should never have HF secrets.
-- The historical branch-cleanup workflow needs `contents: write` only for its narrowly allowlisted GitHub ref deletions. It has already run successfully as part of the project history; it should not be turned into a generic cleanup command.
+- The obsolete branch-cleanup Actions were removed after they completed. Do not restore their write permissions.
 - Private HF workflows receive secrets only in the relevant job steps.
 - Avoid uploading `data/library.json`, CSV title lists, novel ZIPs, EPUBs or cover images as **public** Actions artifacts.
 - Do not print raw exception payloads from APIs that might include private paths or authentication details; `actions.py` deliberately reduces exception logging.
