@@ -287,6 +287,12 @@ class InspectionTests(unittest.TestCase):
         self.assertEqual(len(duplicate_candidates([first, second])), 1)
         self.assertEqual(canonical_url(first["source_url"]), canonical_url(second["source_url"]))
 
+    def test_retriever_partial_download_needs_more_chapters(self):
+        registry = {"novels": [{"url": "https://novelfull.com/partial.html",
+                               "downloads": [{"status": "complete", "range": "1-20"}]}]}
+        result = compare_retriever([], registry, [])
+        self.assertEqual(result["records"][0]["state"], "PARTIALLY_DOWNLOADED")
+
     def test_comparison_states_and_exclusion_privacy(self):
         rows = [{"novel_id": IDENT, "title": "Synthetic Book",
                  "author": "Writer", "source_url": "https://novelfull.com/sample.html"}]
