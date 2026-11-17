@@ -18,6 +18,7 @@ from .inspection import (HFReadOnly, MAX_CATALOGUE, IMAGE_SUFFIXES, inspect_book
                          Snapshot)
 from .inspection_manifest import (build_manifest, local_artifact, manifest_bytes,
                                   manifest_path, read_manifest)
+from .inspection_cache import inspection_cache_dir
 from .paths import book_dir
 
 BLOCKED_ISSUES = {
@@ -173,7 +174,7 @@ def run(argv: list[str] | None = None, backend: HFReadOnly | None = None,
     if args.limit < 0 or not 1 <= args.batch_size <= 20:
         parser.error("--limit must be >=0 and --batch-size must be 1..20")
     try:
-        client = backend if backend is not None else HFReadOnly(args.repo)
+        client = backend if backend is not None else HFReadOnly(args.repo, cache_dir=inspection_cache_dir(args.reports_dir))
         snapshot, selected, status = plan(client, args.reports_dir,
                                            limit=args.limit, force=args.force)
         print(f"Private revision {snapshot.revision[:12]}: " +
