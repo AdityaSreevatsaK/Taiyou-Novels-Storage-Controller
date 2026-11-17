@@ -26,6 +26,25 @@ success and failure, so a double-clicked window stays open for reviewing logs an
 errors. Press any key to close the standalone launcher or return to the menu.
 Passing `--help` to an inspection command exits without pausing, for automation.
 
+## Clear console summaries
+
+Double-clicked Windows commands now show **short labelled results** rather than
+a long list of every novel. For example, a cover audit reports the total number
+of novels, existing standalone covers, missing standalone covers and items
+needing attention, followed by the locations of the full private CSV reports.
+The conflict checker shows the **number of conflicting pairs** and their types.
+
+Detailed per-novel evidence remains in the locally ignored `reports/` folder
+(or the chosen download/backup destination). The bulk uploader additionally
+writes `reports/bulk-upload-plan.csv` with every proposed change, and the
+download and local sync tools save itemised reports. **Always review the upload
+plan before typing YES.** No changes to approval or destructive safeguards.
+
+For per-record diagnostics, use `--verbose` with the underlying Python CLI
+(for example, `py -m taiyou_storage.inspection_cli covers --verbose` or
+`py -m taiyou_storage.cli conflicts --verbose`). Read-only manifest scans
+only verify remote file listing or manifest evidence, not image pixels.
+
 ## Available tools
 
 | Windows launcher | Purpose |
