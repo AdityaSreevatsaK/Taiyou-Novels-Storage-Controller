@@ -18,7 +18,8 @@ INVENTORY_COLUMNS = ["novel_id", "title", "author", "source_url",
                      "catalogue_chapter_count", "stored_chapter_count",
                      "chapter_ranges", "missing_chapters", "duplicate_positions", "epub_sha256",
                      "verification_status", "verification_reason"]
-COVER_COLUMNS = ["novel_id", "title", "source_url", "cover_status", "cover_reason"]
+COVER_COLUMNS = ["title", "standalone_cover", "cover_validation",
+                 "recommended_action", "cover_reason", "source_url", "novel_id"]
 ISSUE_COLUMNS = ["novel_id", "code", "severity", "evidence", "recommended_action"]
 COMPARE_COLUMNS = ["title", "author", "source_url", "state", "hf_ids",
                    "reason", "download_recorded", "download_ranges"]
@@ -58,6 +59,50 @@ def _load_records(path: Path) -> list[dict]:
     if not isinstance(records, list):
         raise ValueError("Invalid novel list: " + str(path))
     return [r for r in records if isinstance(r, dict)]
+
+
+def cover_audit_rows(novels: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Separate an actionable missing-cover shortlist from the full audit.
+
+    Listing evidence proves a file is present, not that the pixels decode.
+    A missing standalone cover is NOT proof that an EPUB lacks an embedded cover.
+    """
+    full, attention = [], []
+    for novel in novels:
+        presence = novel.get("standalone_cover_status", "UNKNOWN")
+        verified = novel.get("cover_status", "UNVERIFIED")
+        is_attention = True
+        if presence == "PRESENT" and verified in {"AVAILABLE", "UNVERIFIED"}:
+            action = ("None; image decoded successfully" if verified == "AVAILABLE"
+                      else "Cover file exists; optional deep scan validates image")
+            is_attention = False
+        elif presence == "ABSENT" and verified == "EMBEDDED_ONLY":
+            action = "No standalone cover; extract verified embedded EPUB cover if needed"
+        elif presence == "ABSENT":
+            action = "No standalone cover; check EPUB or retrieve authentic cover"
+        elif presence == "BROKEN_REFERENCE":
+            action = "Repair the catalogue cover path or restore the referenced image"
+        elif presence == "POSSIBLE_PLACEHOLDER":
+            action = "Review provenance; replace generated or placeholder artwork"
+        elif presence == "MULTIPLE_FILES":
+            action = "Choose the authentic image and link it in the catalogue"
+        elif verified == "BROKEN":
+            action = "Replace the corrupt or unreadable cover image"
+        else:
+            action = "Review cover evidence or run --mode deep"
+        entry = {
+            "title": novel.get("title", ""),
+            "standalone_cover": presence,
+            "cover_validation": verified,
+            "recommended_action": action,
+            "cover_reason": novel.get("cover_reason", ""),
+            "source_url": novel.get("source_url", ""),
+            "novel_id": novel.get("novel_id", ""),
+        }
+        full.append(entry)
+        if is_attention:
+            attention.append(entry)
+    return full, attention
 
 
 def health_report(result: dict, previous: dict | None = None) -> dict:
@@ -149,7 +194,12 @@ def run(argv: list[str] | None = None, backend: HFReadOnly | None = None) -> int
             _json(directory / "novel-inventory.json",
                   {"schema_version": 1, "revision": result["revision"], "mode": mode, "novels": novels})
         elif args.command == "covers":
-            _csv(directory / "missing-covers.csv", novels, COVER_COLUMNS)
+            all_covers, attention = cover_audit_rows(novels)
+            _csv(directory / "cover-audit.csv", all_covers, COVER_COLUMNS)
+            _csv(directory / "missing-covers.csv", attention, COVER_COLUMNS)
+            print(f"Cover listing: {len(all_covers)} novels; {len(attention)} need "
+                  "standalone cover attention. See cover-audit.csv for every novel. "
+                  "A file's presence is not proof of valid image bytes.")
         elif args.command == "integrity":
             _csv(directory / "integrity-report.csv", issues, ISSUE_COLUMNS)
             _json(directory / "integrity-report.json",
