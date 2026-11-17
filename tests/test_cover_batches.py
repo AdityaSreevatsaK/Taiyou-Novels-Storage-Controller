@@ -138,6 +138,57 @@ class CoverBatchTests(unittest.TestCase):
                 self.assertEqual(b["metadata"]["personalTags"], ["Favourite"])
                 self.assertEqual(b["metadata"]["progress"], int(b["id"], 16))
 
+    def test_cover_and_catalogue_are_filesystem_backed_for_xet(self):
+        with TemporaryDirectory() as folder:
+            books = [book(i) for i in range(1, 4)]
+            hub = FakeHub(folder, books)
+            paths_seen = []
+            original = hub.create_commit
+
+            def xet_compatible_commit(**kwargs):
+                sources = [op.path_or_fileobj for op in kwargs["operations"]]
+                self.assertEqual(len(sources), 4)
+                for source in sources:
+                    self.assertIsInstance(source, Path)
+                    self.assertTrue(source.is_file(), "Staged file must survive through HF commit")
+                paths_seen.extend(sources)
+                return original(**kwargs)
+
+            hub.create_commit = xet_compatible_commit
+            with patch("huggingface_hub.hf_hub_download", side_effect=hub.download):
+                revision, statuses = commit_cover_batch(
+                    hub, "owner/private", "token", proposed(books, [1, 2, 3]), hub.sha)
+
+            self.assertEqual(revision, hub.sha)
+            self.assertEqual(statuses, ["UPLOADED"] * 3)
+            self.assertTrue(paths_seen)
+            self.assertTrue(all(not path.exists() for path in paths_seen),
+                            "Temporary cover files must be cleaned after commit")
+            self.assertEqual(sum(path.name == "library.json" for path in paths_seen), 1)
+
+    def test_xet_staging_is_cleaned_after_failed_commit(self):
+        with TemporaryDirectory() as folder:
+            books = [book(1)]
+            hub = FakeHub(folder, books)
+            paths_seen = []
+
+            def failing_commit(**kwargs):
+                sources = [op.path_or_fileobj for op in kwargs["operations"]]
+                self.assertTrue(all(isinstance(path, Path) and path.is_file()
+                                    for path in sources))
+                paths_seen.extend(sources)
+                raise OSError("Synthetic temporary commit failure")
+
+            hub.create_commit = failing_commit
+            with patch("huggingface_hub.hf_hub_download", side_effect=hub.download):
+                with self.assertRaisesRegex(OSError, "Synthetic temporary"):
+                    commit_cover_batch(
+                        hub, "owner/private", "token", proposed(books, [1]), hub.sha)
+            self.assertEqual(len(paths_seen), 2)
+            self.assertTrue(all(not path.exists() for path in paths_seen))
+            self.assertEqual(hub.sha, "a" * 40)
+            self.assertFalse(hub.commits)
+
     def test_repeated_batch_skips_already_uploaded_images(self):
         with TemporaryDirectory() as folder:
             books = [book(i) for i in range(1, 4)]
