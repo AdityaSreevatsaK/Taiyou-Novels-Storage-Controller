@@ -1,9 +1,9 @@
-name: "HF - Upload covers from Novel_Library artifact"
+name: "HF - Upload covers from Novel-Retriever artifact"
 on:
   workflow_dispatch:
     inputs:
       source_run_id:
-        description: "Covers - Download run ID from RichardDaffern/Novel_Library"
+        description: "Covers - Download run ID from RichardDaffern/Novel-Retriever"
         required: true
         type: string
       apply_changes:
@@ -30,10 +30,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install -r requirements.txt
-      - name: Download cover-only artifact from Novel_Library
+      - name: Download cover-only artifact from Novel-Retriever
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          repository: RichardDaffern/Novel_Library
+          repository: RichardDaffern/Novel-Retriever
           run-id: ${{ inputs.source_run_id }}
           name: novel-cover-images
           github-token: ${{ secrets.NOVEL_LIBRARY_ACTIONS_TOKEN || github.token }}
