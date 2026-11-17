@@ -43,7 +43,9 @@ def canonical_url(value: object) -> str:
         host = url.hostname.casefold().removeprefix("www.")
         port = (":" + str(url.port)) if url.port else ""
         path = url.path.rstrip("/") or "/"
-        return urlunsplit(("https", host + port, path, "", ""))
+        if path == "/" and not url.query:
+            return ""  # A website homepage does not identify one book.
+        return urlunsplit(("https", host + port, path, url.query, ""))
     except ValueError:
         return ""
 
@@ -287,7 +289,7 @@ def inspect_book(book: dict, files: dict, revision: str, backend: HFReadOnly,
                              "Repair the catalogue path after verifying the original files"))
         row["cover_reason"] = "Unsafe or malformed catalogue references"
         return row, issues
-    if not title or not meta.get("author"):
+    if not title or not meta.get("author") or str(meta.get("author")).casefold() in ("unknown", "unknown author", "n/a") or not source:
         issues.append(_issue(ident, "MISSING_METADATA", "LOW", "Title or author absent",
                              "Recover verified source metadata"))
     if not isinstance(epub, str) or epub not in files:
@@ -300,8 +302,10 @@ def inspect_book(book: dict, files: dict, revision: str, backend: HFReadOnly,
     candidates = sorted(p for p in files if p.startswith(folder + "/cover")
                         and PurePosixPath(p).suffix.casefold() in IMAGE_SUFFIXES
                         and PurePosixPath(p).parent.as_posix() == folder)
+    provenance = str(meta.get("coverSource") or meta.get("coverOrigin") or "").casefold()
     generated = bool(meta.get("coverGenerated") or meta.get("generatedCover") or
-                     meta.get("coverIsGenerated"))
+                     meta.get("coverIsGenerated") or any(word in provenance for word in
+                     ("placeholder", "generated", "fallback", "synthetic")))
     if cover and cover not in files:
         row["cover_status"], row["cover_reason"] = "BROKEN", "Referenced cover file is absent"
     elif generated or (cover and PLACEHOLDER.search(str(cover))):
