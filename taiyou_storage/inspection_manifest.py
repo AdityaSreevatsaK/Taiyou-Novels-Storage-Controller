@@ -211,40 +211,52 @@ def read_manifest(book: dict, raw: bytes, remote_files: dict[str, int | None],
 
 
 def upload_sidecar(book: dict, archive: Path, epub: bytes) -> bytes:
-    """Generate the same verified sidecar from a newly imported local ZIP.
+    """Generate a sidecar without changing pre-existing uploader acceptance rules.
 
-    Intentionally leaves cover status UNVERIFIED: source ZIP covers are not
-    necessarily the linked, independently validated private-library cover.
+    Invalid or old-style inputs yield UNVERIFIED rather than causing an
+    otherwise-supported upload to fail solely due to this new feature.
     """
     from tempfile import TemporaryDirectory
+    import zipfile
     from .inspection import inspect_archive, validate_epub
 
     with TemporaryDirectory(prefix="taiyou-inspection-") as temp_dir:
         epub_path = Path(temp_dir) / "source.epub"
         epub_path.write_bytes(epub)
-        validate_epub(epub_path)
-        detail = inspect_archive(archive)
         digest = sha256_file(epub_path)
-        if detail["embedded_epub_count"] != 1 or detail["embedded_epub_sha256"] != digest:
-            raise ValueError("Local ZIP embedded EPUB differs from source.epub")
-        status = detail["status"]
-        reason = detail.get("reason", "")
-        reported = book["metadata"].get("chapterCount")
-        if (status == "VERIFIED_COMPLETE" and isinstance(reported, int)
-                and reported > 0 and detail.get("manifest_entries") != reported):
-            status = "UNVERIFIED"
-            reason = "Explicit completion conflicts with catalogue chapter count"
         row = {
-            "stored_chapter_count": detail.get("count"),
-            "chapter_ranges": detail.get("ranges", []),
-            "missing_chapters": detail.get("missing", []),
-            "duplicate_positions": detail.get("duplicates", []),
-            "verification_status": status,
-            "verification_reason": reason,
+            "stored_chapter_count": None, "chapter_ranges": [],
+            "missing_chapters": [], "duplicate_positions": [],
+            "verification_status": "UNVERIFIED",
+            "verification_reason": "Original contents could not be independently verified",
             "cover_status": "UNVERIFIED",
             "cover_reason": "Cover not independently validated by the novel uploader",
             "epub_sha256": digest,
         }
+        try:
+            validate_epub(epub_path)
+            detail = inspect_archive(archive)
+            if detail["embedded_epub_count"] != 1 or detail["embedded_epub_sha256"] != digest:
+                raise ValueError("EPUB and ZIP have different contents")
+            status = detail["status"]
+            reason = detail.get("reason", "")
+            reported = book["metadata"].get("chapterCount")
+            if (status == "VERIFIED_COMPLETE" and isinstance(reported, int)
+                    and reported > 0 and detail.get("manifest_entries") != reported):
+                status = "UNVERIFIED"
+                reason = "Explicit completion conflicts with catalogue chapter count"
+            row.update({
+                "stored_chapter_count": detail.get("count"),
+                "chapter_ranges": detail.get("ranges", []),
+                "missing_chapters": detail.get("missing", []),
+                "duplicate_positions": detail.get("duplicates", []),
+                "verification_status": status,
+                "verification_reason": reason,
+            })
+        except (ValueError, OSError, KeyError, TypeError, zipfile.BadZipFile):
+            # Inspection evidence is optional; its presence must not silently
+            # introduce new upload rejections or assert unverified chapters.
+            pass
         evidence = {
             "epub": local_artifact(book["epubPath"], epub_path),
             "archive": local_artifact(book["archivePath"], archive),
