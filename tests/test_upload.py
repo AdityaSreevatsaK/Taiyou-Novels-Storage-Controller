@@ -126,6 +126,7 @@ class UploadTests(unittest.TestCase):
             novel_id = item["id"]
             self.assertIn(f"data/novels/{novel_id}/source.epub", by_path)
             self.assertIn(f"data/novels/{novel_id}/original.zip", by_path)
+            self.assertIn(f"data/novels/{novel_id}/inspection-manifest.json", by_path)
             catalogue = json.loads(by_path["data/library.json"].path_or_fileobj.getvalue())
             self.assertEqual(catalogue["version"], 1)
             self.assertEqual(len(catalogue["books"]), 1)
@@ -225,7 +226,7 @@ class UploadTests(unittest.TestCase):
             with patch("huggingface_hub.hf_hub_download", side_effect=download):
                 self.assertEqual(apply_item(api, "owner/private", "token", item), "UPDATED")
             ops = [x.path_in_repo for x in api.create_commit.call_args.kwargs["operations"]]
-            self.assertEqual(ops, ["data/library.json"])
+            self.assertEqual(ops, ["data/library.json", f"data/novels/{ident}/inspection-manifest.json"])
 
     def test_corrupt_remote_epub_is_reuploaded(self):
         from taiyou_storage.upload import apply_item

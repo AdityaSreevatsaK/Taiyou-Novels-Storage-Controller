@@ -12,6 +12,7 @@ import sys
 
 from .core import DEFAULT_REPO
 from .inspection import HFReadOnly, compare_retriever, scan
+from .inspection_cache import inspection_cache_dir
 
 INVENTORY_COLUMNS = ["novel_id", "title", "author", "source_url",
                      "catalogue_chapter_count", "stored_chapter_count",
@@ -125,10 +126,10 @@ def _render_html(health: dict, result: dict) -> str:
 
 
 def run(argv: list[str] | None = None, backend: HFReadOnly | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Private, read-only HF novel inspection")
+    parser = argparse.ArgumentParser(description="Private HF novel inspection: lightweight manifests by default")
     parser.add_argument("command", choices=("inventory", "covers", "compare", "integrity", "health"))
     parser.add_argument("--repo", default=os.environ.get("HF_DATASET_REPO", DEFAULT_REPO))
-    parser.add_argument("--mode", choices=("quick", "deep"))
+    parser.add_argument("--mode", choices=("quick", "manifest", "deep"))
     parser.add_argument("--reports-dir", default="reports")
     parser.add_argument("--workers", type=int, choices=range(1, 5), metavar="1..4", default=3)
     parser.add_argument("--registry", type=Path, help="Local Novel Retriever downloaded_novels.json")
@@ -137,10 +138,10 @@ def run(argv: list[str] | None = None, backend: HFReadOnly | None = None) -> int
     parser.add_argument("--retriever-root", type=Path,
                         help="Local Novel Retriever checkout containing downloaded_novels.json")
     args = parser.parse_args(argv)
-    mode = args.mode or ("quick" if args.command == "compare" else "deep")
+    mode = args.mode or "manifest"
     directory = Path(args.reports_dir)
     try:
-        client = backend if backend is not None else HFReadOnly(args.repo)
+        client = backend if backend is not None else HFReadOnly(args.repo, cache_dir=inspection_cache_dir(directory))
         result = scan(client, mode, directory / ".inspection-cache", args.workers)
         novels, issues = result["novels"], result["issues"]
         if args.command == "inventory":

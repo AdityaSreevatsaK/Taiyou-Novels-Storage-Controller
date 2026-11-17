@@ -29,17 +29,45 @@ The upload launchers preview the actual changes and require you to type **YES** 
 | `02_download_all.cmd` | Download existing original ZIPs to `downloads/` |
 | `03_list_novels.cmd` | Export a local CSV of catalogue entries |
 | `04_detect_conflicts.cmd` | Report exact/normalised duplicate titles |
-| **`05_verify_integrity.cmd`** | Verify EPUBs, ZIPs, chapter manifests, cover and catalogue integrity |
-| `13_export_novel_inventory.cmd` | Chapter ranges and missing positions, CSV and JSON |
+| **`05_verify_integrity.cmd`** | Fast remote manifest verification by default; use `--mode deep` for byte-level archive/EPUB inspection |
+| `13_export_novel_inventory.cmd` | Chapter ranges and missing positions from verified sidecars, CSV and JSON |
 | `14_audit_missing_covers.cmd` | Genuine/embedded/missing/broken cover audit |
 | `15_compare_retriever_inventory.cmd` | Compare local Retriever registry and produce private exclusion hashes |
 | `16_library_health_report.cmd` | Local HTML dashboard, JSON and CSV |
+| **`17_backfill_inspection_manifests.cmd`** | Preview and safely migrate existing books to tiny inspection manifests; explicit `--interactive` or `--apply` to write |
+| **`18_cleanup_inspection_downloads.cmd`** | Preview and delete local-only inspection download cache; optionally target older shared HF novel files |
 | `06_sync_status.cmd` | Compare local EPUB-derived IDs with remote IDs; **not** full byte verification |
 | `07_backup_catalogue.cmd` | Save a local copy of `data/library.json` |
 | **`10_upload_covers.cmd`** | Import covers with preview, confirmation and resumable batches |
 | **`11_clear_hf_data.cmd`** | **Destructive full reset** — verified backup and multiple confirmations required |
 
 `00_storage_menu.cmd` offers these working tools in a Windows menu. Launchers **08 and 09 are placeholders**; single-novel restoration and single-novel deletion are not implemented here.
+
+## Inspection downloads and local cleanup
+
+Routine inventory, cover, integrity and health checks now default to small verified manifest files.
+Full `--mode deep` checks and one-time backfills download novel content to
+`reports/.inspection-download-cache/`, a **dedicated local** Hugging Face cache.
+It is safe to clear after all inspections stop, but deep checks will need the files again.
+
+~~~powershell
+.\\18_cleanup_inspection_downloads.cmd
+.\\18_cleanup_inspection_downloads.cmd --apply
+~~~
+
+For large novel EPUB/ZIP/cover files cached by older inspection scripts in the
+**shared** Hugging Face cache, preview then clean only the specified private dataset's
+novel binaries and covers:
+
+~~~powershell
+.\\18_cleanup_inspection_downloads.cmd --legacy-shared-cache
+.\\18_cleanup_inspection_downloads.cmd --legacy-shared-cache --apply
+~~~
+
+Deletion requires a local interactive confirmation and **only affects your computer**.
+The legacy option can also remove cache entries used by another local programme.
+No Hugging Face remote data, novel exports, catalogue or Library data is deleted.
+Never run cleanup while an inspection, upload or migration is active.
 
 ## Import novel ZIPs
 

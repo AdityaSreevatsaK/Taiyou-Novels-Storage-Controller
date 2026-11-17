@@ -1,6 +1,6 @@
 # Private library inspection and integrity
 
-All five launchers use one read-only inspection engine. Reports and revision caches
+Launchers 05 and 13 to 16 use one read-only inspection engine. Launcher 17 is a separate explicit-write migration. Reports and revision caches
 stay **local** inside the gitignored reports/ directory. Never commit, publish or
 upload private reports to GitHub Actions artefacts.
 
@@ -17,8 +17,10 @@ Authenticate using: hf auth login
 | 05_verify_integrity.cmd | integrity-report.csv and .json |
 | 16_library_health_report.cmd --mode deep | library-health.html, .json and .csv |
 
-All output is written under reports/. Inventory, cover, integrity and health default to deep inspection; comparison defaults to quick.
-Override with --mode quick or --mode deep. Other options: --repo OWNER/PRIVATE-DATASET,
+All output is written under reports/. Every inspection command now defaults to **manifest** mode,
+which downloads only the catalogue and small per-novel inspection manifests. It does not download
+EPUBs, ZIPs or cover images. Override with --mode quick, --mode manifest or --mode deep.
+Use --mode deep for a new byte-level verification; remote checks cannot replace it. Other options: --repo OWNER/PRIVATE-DATASET,
 --workers 1..4 and --reports-dir PATH.
 
 The Retriever comparison expects a local sibling checkout at ../Novel-Retriever
@@ -82,3 +84,34 @@ The tooling never repairs, deletes, uploads or triggers downloads.
 
 Scans are local-only. CI uses fixtures and mocked Hugging Face calls; it does
 not access the live dataset or write any reports to GitHub Actions artefacts.
+
+## Local download cache cleanup
+
+Inspection and one-time backfill now use a dedicated, marked Hub cache at
+`reports/.inspection-download-cache/`. Shared Hugging Face caches are no longer
+used by these inspections; uploading novellas and unrelated programmes retain
+their own caching behaviour.
+
+Use `18_cleanup_inspection_downloads.cmd` to preview the size and
+`18_cleanup_inspection_downloads.cmd --apply` to request local interactive
+deletion. The cleaner refuses an unmarked directory or another dataset's marker.
+
+Files downloaded by **older versions** of the inspection scripts may be
+inside the shared HF cache. Run:
+
+~~~powershell
+.\\18_cleanup_inspection_downloads.cmd --legacy-shared-cache
+.\\18_cleanup_inspection_downloads.cmd --legacy-shared-cache --apply
+~~~
+
+This extra flag precisely selects cached `data/novels/**/source.epub`,
+`original.zip` and `cover.{jpg,jpeg,png,webp}` for the selected dataset.
+It uses the HF library's `delete_files` strategy so a shared blob is preserved
+when other snapshot entries refer to it. **It cannot identify which programme
+originally downloaded those cache entries**, so other local tools may need to
+re-download them. It never deletes the shared catalogue, sidecar manifests,
+another dataset, untracked exports or any files on HF.
+
+Both modes default to dry run and require typing `DELETE LOCAL CACHE` before
+deletion. Stop all inspection/upload processes first. An `hf_xet` shared chunk
+cache is separately managed by Hugging Face and is not erased by this tool.
