@@ -17,6 +17,7 @@ import sys
 from urllib.parse import urlsplit, urlunsplit
 import zipfile
 
+from .console_summary import print_summary
 from .core import DEFAULT_REPO, normalized_title, validate_catalogue, write_csv
 from .paths import book_dir, COVER_SUFFIXES
 
@@ -258,6 +259,8 @@ def run(argv=None) -> int:
                         help="Covers per HF commit (1-40; default 20)")
     parser.add_argument("--commit-pause", type=float, default=2.0,
                         help="Seconds between commit batches (default 2)")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Show individual covers; full details always saved in CSV")
     args = parser.parse_args(argv)
     try:
         covers = read_covers_zip(Path(args.archive))
@@ -281,12 +284,22 @@ def run(argv=None) -> int:
             hashes[destination] = digest.hexdigest()
         items = make_plan(covers, books, hashes, remote_paths)
         save_report(items, Path(args.report))
-        counts = {}
-        for item in items:
-            counts[item["status"]] = counts.get(item["status"], 0) + 1
-            print(f"[{item['status']}] {item['title']} -> {item['book_id'] or '-'} ({item['reason']})")
-        print("Summary:", ", ".join(f"{key}={value}" for key, value in sorted(counts.items())))
-        print("Report:", args.report)
+        from collections import Counter
+        counts = Counter(item["status"] for item in items)
+        if args.verbose:
+            for item in items:
+                print(f"[{item['status']}] {item['title']} -> "
+                      f"{item['book_id'] or '-'} ({item['reason']})")
+        print_summary("Cover upload preview", {
+            "Total novels in library": len(books),
+            "Covers in archive": len(items),
+            "New covers": counts["NEW"],
+            "Covers to update": counts["UPDATE"],
+            "Covers to link": counts["LINK"],
+            "Unchanged": counts["UNCHANGED"],
+            "Missing or unmatched": counts["MISSING"],
+            "Conflicts detected": counts["CONFLICT"],
+        }, reports=[args.report], note="Review the CSV before approving changes.")
         if any(item["status"] == "CONFLICT" for item in items):
             print("Conflicts found: NO images uploaded. Resolve first.", file=sys.stderr)
             return 2
@@ -320,14 +333,21 @@ def run(argv=None) -> int:
         try:
             commits, applied = upload_batches(
                 api, args.repo, token, changing, revision,
-                batch_size=args.batch_size, commit_pause=args.commit_pause)
+                batch_size=args.batch_size, commit_pause=args.commit_pause,
+                verbose=args.verbose)
         except Exception:
             print("STOPPED: successfully committed batches are preserved. "
                   "Rerun the SAME ZIP after resolving the error; already uploaded "
                   "covers will show UNCHANGED.", file=sys.stderr)
             raise
-        print(f"Cover upload completed: {applied} changed in {commits} HF commit(s).")
-        print("The reader needs coverPath support to display images.")
+        print_summary("Cover upload completed", {
+            "Total novels in library": len(books),
+            "Covers changed": applied,
+            "HF commits": commits,
+            "Unchanged": counts["UNCHANGED"],
+            "Conflicts detected": 0,
+        }, reports=[args.report, backup],
+            note="Only approved cover files and catalogue references were changed.")
         return 0
     except (CoverError, OSError, ValueError, RuntimeError, zipfile.BadZipFile) as exc:
         print("ERROR:", exc, file=sys.stderr)
