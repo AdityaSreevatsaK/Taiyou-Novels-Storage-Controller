@@ -59,14 +59,22 @@ def _git_blob(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _lfs_pointer_blob_sha1(sha256: str, size: int) -> str:
+    pointer = (f"version https://git-lfs.github.com/spec/v1\\n"
+               f"oid sha256:{sha256}\\nsize {size}\\n").encode("ascii")
+    return hashlib.sha1(b"blob " + str(len(pointer)).encode("ascii") + b"\\0" + pointer).hexdigest()
+
+
 def local_artifact(path: str, local: Path, remote_identity: dict | None = None) -> dict:
     """Create strong provenance for a known local file at one pinned revision."""
     size = local.stat().st_size
     if size < 1:
         raise ValueError("Empty inspection artifact: " + path)
+    sha = sha256_file(local)
     result = {
-        "path": path, "size": size, "sha256": sha256_file(local),
+        "path": path, "size": size, "sha256": sha,
         "git_blob_sha1": _git_blob(local),
+        "lfs_pointer_blob_sha1": _lfs_pointer_blob_sha1(sha, size),
     }
     if remote_identity:
         blob_id = remote_identity.get("blob_id")
@@ -120,7 +128,8 @@ def match_artifact(evidence: dict, remote: dict) -> bool:
         return True
     blob_id = remote.get("blob_id")
     if blob_id and GIT_SHA.fullmatch(str(blob_id)):
-        return blob_id in {evidence.get("hf_blob_id"), evidence.get("git_blob_sha1")}
+        return blob_id in {evidence.get("hf_blob_id"), evidence.get("git_blob_sha1"),
+                           evidence.get("lfs_pointer_blob_sha1")}
     return False
 
 
@@ -147,6 +156,19 @@ def read_manifest(book: dict, raw: bytes, remote_files: dict[str, int | None],
     cover = meta.get("coverPath") or book.get("coverPath")
     if cover:
         expected["cover"] = cover
+    elif "cover" in evidence:
+        # An unlinked but unique real cover can still be cryptographically
+        # validated. Do not allow the sidecar to point outside this book.
+        from pathlib import PurePosixPath
+        from .inspection import IMAGE_SUFFIXES
+        folder = book_dir(book)
+        names = [p for p in remote_files
+                 if p.startswith(folder + "/cover")
+                 and PurePosixPath(p).parent.as_posix() == folder
+                 and PurePosixPath(p).suffix.casefold() in IMAGE_SUFFIXES]
+        if len(names) != 1:
+            raise ValueError("Unlinked cover candidate is ambiguous")
+        expected["cover"] = names[0]
     for name, entry in evidence.items():
         if name not in expected or not isinstance(entry, dict) or entry.get("path") != expected[name]:
             raise ValueError("Manifest references a different novel artifact")
@@ -161,6 +183,19 @@ def read_manifest(book: dict, raw: bytes, remote_files: dict[str, int | None],
         raise ValueError("Chapter evidence is missing required original files")
     if results["cover_status"] == "AVAILABLE" and "cover" not in evidence:
         raise ValueError("Cover validation lacks cryptographic provenance")
+    if (results["cover_status"] in {"MISSING", "EMBEDDED_ONLY"} and
+            "cover" not in evidence):
+        from pathlib import PurePosixPath
+        from .inspection import IMAGE_SUFFIXES
+        folder = book_dir(book)
+        if any(path.startswith(folder + "/cover") and
+               PurePosixPath(path).parent.as_posix() == folder and
+               PurePosixPath(path).suffix.casefold() in IMAGE_SUFFIXES
+               for path in remote_files):
+            raise ValueError("Standalone cover listing changed since inspection")
+    if "epub" in evidence and results.get("epub_sha256") and (
+            results["epub_sha256"] != evidence["epub"]["sha256"]):
+        raise ValueError("EPUB hash contradicts stored inspection")
     if results["cover_status"] == "EMBEDDED_ONLY" and "epub" not in evidence:
         raise ValueError("Embedded cover validation lacks EPUB evidence")
     findings = value.get("issues", [])
