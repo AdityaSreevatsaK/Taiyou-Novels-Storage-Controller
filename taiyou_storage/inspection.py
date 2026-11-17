@@ -130,25 +130,38 @@ def chapter_positions(records: object, archive_names: set[str] | None = None,
 
 
 def inspect_archive(path: Path) -> dict:
-    """Validate ZIP and inspect the real downloader's chapters.json if present."""
+    """Validate ZIP, source EPUB identity and downloader chapter positions."""
     with zipfile.ZipFile(path) as archive:
         validate_zip_budget(archive)
         if archive.testzip():
             raise ValueError("Archive CRC validation failed")
-        names = {item.filename for item in archive.infolist() if not item.is_dir() and item.file_size > 0}
+        entries = [item for item in archive.infolist() if not item.is_dir()]
+        names = {item.filename for item in entries if item.file_size > 0}
+        embedded = [item for item in entries
+                    if PurePosixPath(item.filename).name.casefold() == "source.epub"]
+        epub_digest = ""
+        if len(embedded) == 1 and 0 < embedded[0].file_size <= 120 * 1024 * 1024:
+            digest = hashlib.sha256()
+            with archive.open(embedded[0]) as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            epub_digest = digest.hexdigest()
         matches = [name for name in names if PurePosixPath(name).name.casefold() == "chapters.json"]
         if len(matches) > 1:
             raise ValueError("Multiple chapters.json manifests")
         if not matches:
-            return chapter_positions(None)
-        item = archive.getinfo(matches[0])
-        if item.file_size > MAX_MANIFEST:
-            raise ValueError("Chapter manifest exceeds size limit")
-        manifest = json.loads(archive.read(matches[0]).decode("utf-8-sig"))
-        explicit_complete = isinstance(manifest, dict) and manifest.get("complete") is True
-        records = manifest.get("chapters") if isinstance(manifest, dict) else manifest
-        return chapter_positions(records, names, complete=explicit_complete)
-
+            details = chapter_positions(None)
+        else:
+            item = archive.getinfo(matches[0])
+            if item.file_size > MAX_MANIFEST:
+                raise ValueError("Chapter manifest exceeds size limit")
+            manifest = json.loads(archive.read(matches[0]).decode("utf-8-sig"))
+            explicit_complete = isinstance(manifest, dict) and manifest.get("complete") is True
+            records = manifest.get("chapters") if isinstance(manifest, dict) else manifest
+            details = chapter_positions(records, names, complete=explicit_complete)
+        details["embedded_epub_count"] = len(embedded)
+        details["embedded_epub_sha256"] = epub_digest
+        return details
 
 def validate_epub(path: Path) -> None:
     with zipfile.ZipFile(path) as archive:
@@ -173,7 +186,8 @@ def valid_image(data: bytes, suffix: str) -> bool:
     from PIL import Image, UnidentifiedImageError
     try:
         with Image.open(BytesIO(data)) as image:
-            if image.format not in {"JPEG", "PNG", "WEBP"}:
+            if image.format != {".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG",
+                                ".webp": "WEBP"}[suffix.lower()]:
                 return False
             width, height = image.size
             if width < 80 or height < 100 or width * height > 30_000_000:
@@ -215,7 +229,8 @@ def embedded_cover(epub: Path) -> bool:
             if not href:
                 continue
             full = str(base / href) if str(base) != "." else href
-            if ".." in PurePosixPath(full).parts or full not in z.namelist():
+            if (".." in PurePosixPath(full).parts or full not in z.namelist()
+                    or PLACEHOLDER.search(PurePosixPath(full).name)):
                 continue
             item = z.getinfo(full)
             if item.file_size <= MAX_IMAGE and valid_image(z.read(full), PurePosixPath(full).suffix):
@@ -365,6 +380,14 @@ def inspect_book(book: dict, files: dict, revision: str, backend: HFReadOnly,
     if archive in files:
         try:
             details = inspect_archive(backend.download(archive, revision))
+            if details.get("embedded_epub_count") != 1 or not details.get("embedded_epub_sha256"):
+                issues.append(_issue(ident, "MISSING_EMBEDDED_EPUB", "MEDIUM",
+                                     "Original archive lacks one valid source.epub",
+                                     "Check the original ZIP's EPUB provenance"))
+            elif row["epub_sha256"] and details["embedded_epub_sha256"] != row["epub_sha256"]:
+                issues.append(_issue(ident, "EPUB_ARCHIVE_MISMATCH", "HIGH",
+                                     "Stored source.epub differs from original.zip embedded EPUB",
+                                     "Compare both editions and restore the authoritative copy"))
             row.update({"stored_chapter_count": details.get("count"),
                         "chapter_ranges": details.get("ranges", []),
                         "missing_chapters": details.get("missing", []),
@@ -392,6 +415,9 @@ def inspect_book(book: dict, files: dict, revision: str, backend: HFReadOnly,
             issues.append(_issue(ident, "CORRUPT_OR_UNREADABLE_ARCHIVE", "HIGH",
                                  type(exc).__name__ + ": " + str(exc),
                                  "Retry or restore the original archive"))
+    if any(issue["code"] == "EPUB_ARCHIVE_MISMATCH" for issue in issues):
+        row["verification_status"] = "UNVERIFIED"
+        row["verification_reason"] = "Stored EPUB differs from original archive"
     if not epub_valid and row["verification_status"] == "VERIFIED_COMPLETE":
         row["verification_status"] = "UNVERIFIED"
         row["verification_reason"] = "EPUB not validated; source archive alone cannot prove reader completeness"
