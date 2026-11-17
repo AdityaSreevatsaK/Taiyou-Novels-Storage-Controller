@@ -16,6 +16,29 @@
 
 ---
 
+## Inspection toolkit update, 17 November 2026
+
+The former 05 integrity placeholder has been replaced by a functional,
+**read-only** inspection engine in taiyou_storage/inspection.py and
+taiyou_storage/inspection_cli.py. Windows launchers 13 (chapter inventory),
+14 (cover audit), 15 (local Novel Retriever comparison), 16 (HTML health)
+and 05 (integrity verification) all share this engine.
+
+Read docs/LIBRARY_INSPECTION.md before changing scan logic. All HF access is
+pinned to a private dataset revision and uses *only* HF read APIs. Local outputs
+including cache, comparison data and URL-hash exclusions belong in the ignored
+reports/ directory, never GitHub, public artefacts or PR comments.
+
+A catalogue chapter count is not proof of available chapters. A bare
+chapters.json array can only establish a verified *range*. Completion needs
+explicit manifest evidence plus checked chapter files and a valid EPUB;
+unknown or conflicting evidence must remain unverified. Generated covers are
+not authentic evidence, and ambiguous URL/title identity matches cannot be
+used for automatic cross-repository download skipping.
+
+Novel Retriever integration remains a **separate reviewed change**, using
+only a privately transferred hash exclusion file, not private HF data.
+
 ## 0. Reading order and source-of-truth hierarchy
 
 An agent beginning work in this repository should:
@@ -128,7 +151,7 @@ Taiyou-Novels-Storage-Controller/
 ├── 02_download_all.cmd                # Download ZIP archives
 ├── 03_list_novels.cmd                 # Export novel list
 ├── 04_detect_conflicts.cmd            # Export duplicate titles
-├── 05_verify_integrity.cmd            # PLACEHOLDER, not implemented
+├── 05_verify_integrity.cmd            # Read-only integrity audit
 ├── 06_sync_status.cmd                 # Compare local EPUB IDs
 ├── 07_backup_catalogue.cmd            # Back up catalogue only
 ├── 08_restore_novel.cmd               # PLACEHOLDER, not implemented
@@ -679,7 +702,7 @@ It must **never** be used as an answer to:
 - One missing chapter.
 - A mismatch between the reader and the catalogue.
 
-The three placeholder launchers `05_verify_integrity.cmd`, `08_restore_novel.cmd` and `09_delete_novel.cmd` do **not** implement safer alternatives. Do not tell the user otherwise.
+The two remaining placeholder launchers `08_restore_novel.cmd` and `09_delete_novel.cmd` do **not** implement safer alternatives. Do not tell the user otherwise.
 
 ### 11.2 Read-only preview
 

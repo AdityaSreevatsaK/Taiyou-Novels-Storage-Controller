@@ -29,12 +29,17 @@ The upload launchers preview the actual changes and require you to type **YES** 
 | `02_download_all.cmd` | Download existing original ZIPs to `downloads/` |
 | `03_list_novels.cmd` | Export a local CSV of catalogue entries |
 | `04_detect_conflicts.cmd` | Report exact/normalised duplicate titles |
+| **`05_verify_integrity.cmd`** | Verify EPUBs, ZIPs, chapter manifests, cover and catalogue integrity |
+| `13_export_novel_inventory.cmd` | Chapter ranges and missing positions, CSV and JSON |
+| `14_audit_missing_covers.cmd` | Genuine/embedded/missing/broken cover audit |
+| `15_compare_retriever_inventory.cmd` | Compare local Retriever registry and produce private exclusion hashes |
+| `16_library_health_report.cmd` | Local HTML dashboard, JSON and CSV |
 | `06_sync_status.cmd` | Compare local EPUB-derived IDs with remote IDs; **not** full byte verification |
 | `07_backup_catalogue.cmd` | Save a local copy of `data/library.json` |
 | **`10_upload_covers.cmd`** | Import covers with preview, confirmation and resumable batches |
 | **`11_clear_hf_data.cmd`** | **Destructive full reset** — verified backup and multiple confirmations required |
 
-`00_storage_menu.cmd` offers these working tools in a Windows menu. Launchers **05, 08 and 09 are placeholders**; full-integrity audit, single-novel restoration and single-novel deletion are not implemented here.
+`00_storage_menu.cmd` offers these working tools in a Windows menu. Launchers **08 and 09 are placeholders**; single-novel restoration and single-novel deletion are not implemented here.
 
 ## Import novel ZIPs
 
@@ -66,6 +71,12 @@ A novel is labelled **UNCHANGED** only when its original ZIP, stored EPUB and so
 The first upload can initialise a brand-new **private** dataset. If a dataset already contains `data/` objects but lacks `data/library.json`, the uploader **refuses** to initialise over potentially orphaned data. Changes to both title and EPUB may be impossible to identify confidently; review any possible duplicates manually.
 
 See [smart upload details](README.smart-upload.md) for compatibility and matching caveats.
+
+## Read-only library inspection
+
+Run the **13–16** tools directly or via the menu. All reports remain in the ignored local `reports/` directory and must never be committed to this public repository. Use --mode quick for faster catalogue/file listing checks; default deep mode validates EPUB, ZIP, chapter files and images. An older EPUB without a verified manifest remains `UNVERIFIED`, never assumed complete from its chapter count.
+
+For the Retriever comparison, keep a local `Novel-Retriever` checkout next to this controller, or pass `--retriever-root PATH`. Automatic skipping in Retriever is a separate change. See [inspection guide](docs/LIBRARY_INSPECTION.md) for evidence semantics, privacy and usage.
 
 ## Import covers
 
