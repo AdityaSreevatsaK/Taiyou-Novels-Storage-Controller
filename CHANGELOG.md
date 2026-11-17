@@ -4,6 +4,11 @@ The Storage Controller uses semantic-style tags beginning with **v0.1.0**. This
 is the first formal tag; previous development was merged to `master` without
 versioned releases.
 
+## Unreleased
+
+- Add private, revision-pinned, read-only inventory, cover audit, Retriever comparison, integrity verification and HTML health report.
+- Add offline regression tests, bounded concurrent deep scanning and revision-keyed local cache; no HF write operations.
+
 ## [v0.1.0] — 2026-11-11
 
 **First verified Storage Controller milestone.**
