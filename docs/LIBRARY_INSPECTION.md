@@ -17,8 +17,7 @@ Authenticate using: hf auth login
 | 05_verify_integrity.cmd | integrity-report.csv and .json |
 | 16_library_health_report.cmd --mode deep | library-health.html, .json and .csv |
 
-All output is written under reports/. The integrity and cover commands default
-to deep inspection, whereas inventory, comparison and health default to quick.
+All output is written under reports/. Inventory, cover, integrity and health default to deep inspection; comparison defaults to quick.
 Override with --mode quick or --mode deep. Other options: --repo OWNER/PRIVATE-DATASET,
 --workers 1..4 and --reports-dir PATH.
 
