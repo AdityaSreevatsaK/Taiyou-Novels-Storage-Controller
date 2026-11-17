@@ -77,7 +77,7 @@ class FixtureBackend:
         self.revision = revision
         self.calls = []
         self.fail = set()
-        self.root.joinpath("data").mkdir(exist_ok=True)
+        self.root.joinpath("data").mkdir(parents=True, exist_ok=True)
         self.add("data/library.json", json.dumps({"version": 1, "books": self.books}).encode())
 
     def add(self, name, content):
@@ -186,6 +186,7 @@ class InspectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             b = book(cover=False)
             backend = FixtureBackend(tmp, [b]).populate(cover=False, manifest=False)
+            backend.add(f"data/novels/{IDENT}/source.epub", epub_bytes(cover=True))
             result = scan(backend, "deep")
             self.assertEqual(result["novels"][0]["cover_status"], "EMBEDDED_ONLY")
             self.assertEqual(result["novels"][0]["verification_status"], "UNVERIFIED")
