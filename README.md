@@ -36,7 +36,7 @@ Passing `--help` to an inspection command exits without pausing, for automation.
 | `04_detect_conflicts.cmd` | Report exact/normalised duplicate titles |
 | **`05_verify_integrity.cmd`** | Fast remote manifest verification by default; use `--mode deep` for byte-level archive/EPUB inspection |
 | `13_export_novel_inventory.cmd` | Chapter ranges and missing positions from verified sidecars, CSV and JSON |
-| `14_audit_missing_covers.cmd` | Genuine/embedded/missing/broken cover audit |
+| `14_audit_missing_covers.cmd` | Actionable `missing-covers.csv` plus full `cover-audit.csv`, distinguishing file presence from verified image integrity |
 | `15_compare_retriever_inventory.cmd` | Compare local Retriever registry and produce private exclusion hashes |
 | `16_library_health_report.cmd` | Local HTML dashboard, JSON and CSV |
 | **`17_backfill_inspection_manifests.cmd`** | Preview and safely migrate existing books to tiny inspection manifests; explicit `--interactive` or `--apply` to write |

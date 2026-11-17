@@ -12,7 +12,7 @@ Authenticate using: hf auth login
 | Launcher | Local output |
 | --- | --- |
 | 13_export_novel_inventory.cmd --mode deep | novel-inventory.csv and .json |
-| 14_audit_missing_covers.cmd | missing-covers.csv |
+| 14_audit_missing_covers.cmd | missing-covers.csv (attention only) and cover-audit.csv (all novels) |
 | 15_compare_retriever_inventory.cmd | retriever-comparison.csv, .json, retriever-exclusions.json |
 | 05_verify_integrity.cmd | integrity-report.csv and .json |
 | 16_library_health_report.cmd --mode deep | library-health.html, .json and .csv |
@@ -115,3 +115,26 @@ another dataset, untracked exports or any files on HF.
 Both modes default to dry run and require typing `DELETE LOCAL CACHE` before
 deletion. Stop all inspection/upload processes first. An `hf_xet` shared chunk
 cache is separately managed by Hugging Face and is not erased by this tool.
+
+## Understanding the cover audit
+
+`14_audit_missing_covers.cmd` produces two different local reports:
+
+- **missing-covers.csv:** only novels requiring attention because a standalone
+  cover is absent, its catalogue reference is broken, a placeholder is suspected,
+  multiple candidates conflict, or the checked image is corrupt.
+- **cover-audit.csv:** every novel, including those with a known cover file that
+  simply has not been byte-validated.
+
+The **standalone_cover** column is based on file listing evidence. `PRESENT`
+means Hugging Face contains a likely cover file, but does not guarantee that it
+is a genuine or readable image. `ABSENT` means no standalone image was found;
+there could still be a valid embedded EPUB cover. The separate
+**cover_validation** column is `UNVERIFIED` until a trustworthy inspection
+manifest or optional `--mode deep` establishes more evidence.
+The **recommended_action** column tells you what to do next.
+
+Routine cover audits use remote file metadata and small manifests only; they
+do **not** need to download every novel. For byte-level image/EPUB inspection,
+run `14_audit_missing_covers.cmd --mode deep`. A deep check does download
+relevant files to the isolated inspection cache.

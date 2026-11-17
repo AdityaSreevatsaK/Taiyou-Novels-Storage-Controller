@@ -315,6 +315,7 @@ def inspect_book(book: dict, files: dict, revision: str, backend: HFReadOnly,
            "duplicate_positions": [], "verification_status": "UNVERIFIED",
            "verification_reason": "Quick scan; chapters not inspected",
            "cover_status": "UNVERIFIED", "cover_reason": "Not checked",
+           "standalone_cover_status": "UNKNOWN",
            "epub_path": epub or "", "archive_path": archive or "", "epub_sha256": ""}
     issues = []
     try:
@@ -341,6 +342,17 @@ def inspect_book(book: dict, files: dict, revision: str, backend: HFReadOnly,
     generated = bool(meta.get("coverGenerated") or meta.get("generatedCover") or
                      meta.get("coverIsGenerated") or any(word in provenance for word in
                      ("placeholder", "generated", "fallback", "synthetic")))
+    # Presence is a repository-listing fact, not proof of a readable image.
+    if cover and cover not in files:
+        row["standalone_cover_status"] = "BROKEN_REFERENCE"
+    elif generated or (cover and PLACEHOLDER.search(str(cover))):
+        row["standalone_cover_status"] = "POSSIBLE_PLACEHOLDER"
+    elif not cover and len(candidates) > 1:
+        row["standalone_cover_status"] = "MULTIPLE_FILES"
+    elif (cover and cover in files) or candidates:
+        row["standalone_cover_status"] = "PRESENT"
+    else:
+        row["standalone_cover_status"] = "ABSENT"
     if cover and cover not in files:
         row["cover_status"], row["cover_reason"] = "BROKEN", "Referenced cover file is absent"
     elif generated or (cover and PLACEHOLDER.search(str(cover))):
@@ -520,7 +532,7 @@ def scan(backend: HFReadOnly, mode: str = "manifest", cache_root: Path | None = 
                                 "Repair the catalogue record")])
         cached = None
         if cache_root is not None and mode == "deep":
-            fingerprint = hashlib.sha256(("inspection-v2|" + snapshot.revision + "|" + ident + "|" +
+            fingerprint = hashlib.sha256(("inspection-v3-cover-listing|" + snapshot.revision + "|" + ident + "|" +
                                            json.dumps(item, sort_keys=True, ensure_ascii=False)).encode()).hexdigest()
             cached = cache_root / snapshot.revision / (fingerprint + ".json")
             if cached.exists():
