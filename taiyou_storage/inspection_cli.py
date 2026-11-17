@@ -40,7 +40,8 @@ def _json(path: Path, value: object) -> None:
 def _csv(path: Path, records: list[dict], fields: list[str]) -> None:
     from io import StringIO
     buffer = StringIO(newline="")
-    writer = csv.DictWriter(buffer, fieldnames=fields, extrasaction="ignore")
+    writer = csv.DictWriter(buffer, fieldnames=fields, extrasaction="ignore",
+                            lineterminator="\n")  # Avoid CRCRLF blank rows on Windows
     writer.writeheader()
     for record in records:
         writer.writerow({key: "; ".join(map(str, v)) if isinstance(v, list) else v
