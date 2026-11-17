@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import csv
 from datetime import datetime, timezone
 from html import escape
@@ -11,6 +12,7 @@ from pathlib import Path
 import sys
 
 from .core import DEFAULT_REPO
+from .console_summary import print_summary
 from .inspection import HFReadOnly, compare_retriever, scan
 from .inspection_cache import inspection_cache_dir
 
@@ -178,6 +180,8 @@ def run(argv: list[str] | None = None, backend: HFReadOnly | None = None) -> int
     parser.add_argument("--mode", choices=("quick", "manifest", "deep"))
     parser.add_argument("--reports-dir", default="reports")
     parser.add_argument("--workers", type=int, choices=range(1, 5), metavar="1..4", default=3)
+    parser.add_argument("--verbose", action="store_true",
+                        help="Print individual findings in addition to saving complete reports")
     parser.add_argument("--registry", type=Path, help="Local Novel Retriever downloaded_novels.json")
     parser.add_argument("--planned", type=Path, action="append", default=[],
                         help="Local planned novel JSON; repeat for several lists")
@@ -190,21 +194,48 @@ def run(argv: list[str] | None = None, backend: HFReadOnly | None = None) -> int
         client = backend if backend is not None else HFReadOnly(args.repo, cache_dir=inspection_cache_dir(directory))
         result = scan(client, mode, directory / ".inspection-cache", args.workers)
         novels, issues = result["novels"], result["issues"]
+        reports = []
+        metrics = {"Total novels": len(novels)}
+        title = {"inventory": "Chapter inventory", "covers": "Cover audit",
+                 "compare": "Novel Retriever comparison", "integrity": "Library integrity",
+                 "health": "Library health"}[args.command]
         if args.command == "inventory":
             _csv(directory / "novel-inventory.csv", novels, INVENTORY_COLUMNS)
             _json(directory / "novel-inventory.json",
                   {"schema_version": 1, "revision": result["revision"], "mode": mode, "novels": novels})
+            coverage = Counter(row.get("verification_status", "UNVERIFIED") for row in novels)
+            metrics.update({
+                "Verified complete": coverage["VERIFIED_COMPLETE"],
+                "Verified ranges": coverage["VERIFIED_RANGE"],
+                "Incomplete chapter coverage": coverage["INCOMPLETE"],
+                "Unverified chapter coverage": coverage["UNVERIFIED"],
+                "Novels with detected chapter gaps": sum(bool(row.get("missing_chapters")) for row in novels),
+            })
+            reports = [directory / "novel-inventory.csv", directory / "novel-inventory.json"]
         elif args.command == "covers":
             all_covers, attention = cover_audit_rows(novels)
             _csv(directory / "cover-audit.csv", all_covers, COVER_COLUMNS)
             _csv(directory / "missing-covers.csv", attention, COVER_COLUMNS)
-            print(f"Cover listing: {len(all_covers)} novels; {len(attention)} need "
-                  "standalone cover attention. See cover-audit.csv for every novel. "
-                  "A file's presence is not proof of valid image bytes.")
+            presence = Counter(row["standalone_cover"] for row in all_covers)
+            metrics.update({
+                "Standalone cover files present": presence["PRESENT"],
+                "Missing standalone cover files": presence["ABSENT"],
+                "Other cover issues to review": len(attention) - presence["ABSENT"],
+                "Total requiring cover attention": len(attention),
+            })
+            reports = [directory / "missing-covers.csv", directory / "cover-audit.csv"]
         elif args.command == "integrity":
             _csv(directory / "integrity-report.csv", issues, ISSUE_COLUMNS)
             _json(directory / "integrity-report.json",
                   {"schema_version": 1, "revision": result["revision"], "mode": mode, "issues": issues})
+            severities = Counter(item.get("severity", "") for item in issues)
+            metrics.update({
+                "Integrity findings": len(issues),
+                "High-severity findings": severities["HIGH"],
+                "Other findings": len(issues) - severities["HIGH"],
+                "Potential duplicate pairs": len(result["duplicate_candidates"]),
+            })
+            reports = [directory / "integrity-report.csv", directory / "integrity-report.json"]
         elif args.command == "compare":
             registry_path = args.registry
             if registry_path is None and args.retriever_root:
@@ -223,6 +254,18 @@ def run(argv: list[str] | None = None, backend: HFReadOnly | None = None) -> int
             _json(directory / "retriever-comparison.json",
                   {"revision": result["revision"], **comparison})
             _json(directory / "retriever-exclusions.json", comparison["exclusions"])
+            states = Counter(item["state"] for item in comparison["records"])
+            metrics.update({
+                "Retriever entries compared": len(comparison["records"]),
+                "Already in library": states["ALREADY_IN_HF"],
+                "Downloaded, not uploaded": states["DOWNLOADED_NOT_UPLOADED"],
+                "Partially downloaded": states["PARTIALLY_DOWNLOADED"],
+                "Not yet downloaded": states["TO_DOWNLOAD"],
+                "Ambiguous matches": states["AMBIGUOUS"],
+            })
+            reports = [directory / "retriever-comparison.csv",
+                       directory / "retriever-comparison.json",
+                       directory / "retriever-exclusions.json"]
         elif args.command == "health":
             last_file = directory / "library-health.json"
             try:
@@ -234,9 +277,30 @@ def run(argv: list[str] | None = None, backend: HFReadOnly | None = None) -> int
             _csv(directory / "library-health.csv",
                  [{"metric": k, "value": v} for k, v in health["metrics"].items()], HEALTH_COLUMNS)
             _atomic(directory / "library-health.html", _render_html(health, result))
-        print(f"Completed {mode} inspection at revision {result['revision'][:12]}; "
-              f"{len(novels)} novels, {len(issues)} findings. Private reports: {directory}")
-        print("Coverage is VERIFIED_COMPLETE only when source declares completion and files verify.")
+            presence = Counter(row.get("standalone_cover_status", "UNKNOWN") for row in novels)
+            metrics.update({
+                "Integrity findings": health["metrics"]["integrity_issues"],
+                "Potential duplicate pairs": health["metrics"]["duplicate_candidates"],
+                "Missing standalone cover files": presence["ABSENT"],
+                "Unverified chapter coverage": health["metrics"]["unknown_chapter_coverage"],
+            })
+            reports = [directory / "library-health.html",
+                       directory / "library-health.csv",
+                       directory / "library-health.json"]
+        metrics["Inspection mode"] = mode
+        if result.get("interrupted"):
+            metrics["Scan interrupted"] = "Yes; results may be incomplete"
+        if args.verbose:
+            for issue in issues:
+                print(f"[{issue['severity']}] {issue['code']} ({issue['novel_id']}): "
+                      f"{issue['evidence']}")
+            if args.command == "compare":
+                for entry in comparison["records"]:
+                    print(f"[{entry['state']}] {entry['title']}")
+        print_summary(title, metrics, reports=reports,
+                      note=("Remote presence is not verified image/EPUB integrity."
+                            if mode != "deep" else
+                            "Deep checks can still yield unverified evidence."))
         return 0
     except (Exception, KeyboardInterrupt) as exc:
         print(f"ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
