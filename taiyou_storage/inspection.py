@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from io import BytesIO
 import hashlib
 import json
@@ -20,6 +20,7 @@ import zipfile
 
 from .core import DEFAULT_REPO, StorageError, normalized_title, sha256_file
 from .paths import book_dir, validate_book_paths
+from .inspection_manifest import manifest_path, read_manifest, MAX_SIDECAR_BYTES
 from .upload import validate_zip_budget
 
 MAX_IMAGE = 12 * 1024 * 1024
@@ -242,6 +243,7 @@ def embedded_cover(epub: Path) -> bool:
 class Snapshot:
     revision: str
     files: dict[str, int | None]
+    identities: dict[str, dict] = field(default_factory=dict)
 
 
 class HFReadOnly:
@@ -257,17 +259,27 @@ class HFReadOnly:
             raise StorageError("Dataset must be private and have an immutable revision")
         revision = info.sha
         files = {}
+        identities = {}
         try:
             tree = api.list_repo_tree(repo_id=self.repo, repo_type="dataset",
                                       recursive=True, revision=revision, token=self.token)
             for entry in tree:
                 path = getattr(entry, "path", None)
                 if path and not path.endswith("/") and not entry.__class__.__name__.endswith("Folder"):
-                    files[path] = getattr(entry, "size", None)
+                    size = getattr(entry, "size", None)
+                    files[path] = size
+                    lfs = getattr(entry, "lfs", None)
+                    digest = (lfs.get("sha256") if isinstance(lfs, dict)
+                              else getattr(lfs, "sha256", None))
+                    identities[path] = {
+                        "size": size,
+                        "blob_id": getattr(entry, "blob_id", None),
+                        "sha256": digest,
+                    }
         except (AttributeError, TypeError, NotImplementedError):
             files = {p: None for p in api.list_repo_files(
                 repo_id=self.repo, repo_type="dataset", revision=revision, token=self.token)}
-        return Snapshot(revision, files)
+        return Snapshot(revision, files, identities)
 
     def download(self, name: str, revision: str) -> Path:
         from huggingface_hub import hf_hub_download
@@ -285,7 +297,7 @@ def _book_id(item: object) -> str:
 
 
 def inspect_book(book: dict, files: dict, revision: str, backend: HFReadOnly,
-                 mode: str) -> tuple[dict, list[dict]]:
+                 mode: str, identities: dict[str, dict] | None = None) -> tuple[dict, list[dict]]:
     ident = _book_id(book)
     meta = book.get("metadata") if isinstance(book.get("metadata"), dict) else {}
     title = str(meta.get("title") or "")
@@ -328,7 +340,7 @@ def inspect_book(book: dict, files: dict, revision: str, backend: HFReadOnly,
         row["cover_status"], row["cover_reason"] = "BROKEN", "Referenced cover file is absent"
     elif generated or (cover and PLACEHOLDER.search(str(cover))):
         row["cover_status"], row["cover_reason"] = "UNVERIFIED", "Possible generated placeholder"
-    elif mode == "quick":
+    elif mode in ("quick", "manifest"):
         row["cover_status"] = "UNVERIFIED"
         row["cover_reason"] = ("Standalone image exists but bytes not checked" if candidates
                                else "No standalone image; embedded cover not checked")
@@ -363,6 +375,33 @@ def inspect_book(book: dict, files: dict, revision: str, backend: HFReadOnly,
     if row["cover_status"] in {"MISSING", "BROKEN"}:
         issues.append(_issue(ident, "COVER_" + row["cover_status"], "MEDIUM",
                              row["cover_reason"], "Restore an authentic cover and repair its reference"))
+    if mode == "manifest":
+        sidecar = manifest_path(book)
+        if sidecar not in files:
+            row["verification_reason"] = "No remote inspection manifest; run the one-time backfill"
+            issues.append(_issue(ident, "INSPECTION_MANIFEST_MISSING", "LOW", sidecar,
+                                 "Backfill a verified sidecar without modifying the novel"))
+        else:
+            try:
+                if isinstance(files[sidecar], int) and files[sidecar] > MAX_SIDECAR_BYTES:
+                    raise ValueError("Sidecar exceeds size limit")
+                stored = backend.download(sidecar, revision)
+                if stored.stat().st_size > MAX_SIDECAR_BYTES:
+                    raise ValueError("Sidecar exceeds size limit")
+                values, saved_issues = read_manifest(
+                    book, stored.read_bytes(), files, identities or {})
+                row.update(values)
+                issues.extend(saved_issues)
+            except Exception as exc:
+                row["verification_reason"] = "Manifest stale or unreadable: " + type(exc).__name__
+                issues.append(_issue(ident, "INSPECTION_MANIFEST_STALE", "MEDIUM",
+                                     type(exc).__name__,
+                                     "Rebuild manifest against the current novel files"))
+        if row["cover_status"] in {"MISSING", "BROKEN"} and not any(
+                i["code"] == "COVER_" + row["cover_status"] for i in issues):
+            issues.append(_issue(ident, "COVER_" + row["cover_status"], "MEDIUM",
+                                 row["cover_reason"], "Restore an authentic cover"))
+        return row, issues
     if mode != "deep":
         return row, issues
     if archive not in files:
@@ -450,10 +489,10 @@ def duplicate_candidates(rows: list[dict]) -> list[dict]:
     return matches
 
 
-def scan(backend: HFReadOnly, mode: str = "quick", cache_root: Path | None = None,
+def scan(backend: HFReadOnly, mode: str = "manifest", cache_root: Path | None = None,
          workers: int = 3) -> dict:
-    if mode not in {"quick", "deep"}:
-        raise ValueError("mode must be quick or deep")
+    if mode not in {"quick", "manifest", "deep"}:
+        raise ValueError("mode must be quick, manifest or deep")
     if not 1 <= workers <= MAX_WORKERS:
         raise ValueError("workers must be between 1 and 4")
     snapshot = backend.snapshot()
@@ -485,7 +524,8 @@ def scan(backend: HFReadOnly, mode: str = "quick", cache_root: Path | None = Non
                 except (ValueError, OSError):
                     pass
         try:
-            value = inspect_book(item, snapshot.files, snapshot.revision, backend, mode)
+            value = inspect_book(item, snapshot.files, snapshot.revision, backend, mode,
+                                 snapshot.identities)
         except Exception as exc:
             value = ({"novel_id": ident, "title": "", "author": "", "source_url": "",
                       "verification_status": "UNVERIFIED", "cover_status": "UNVERIFIED"}, [
