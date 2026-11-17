@@ -402,7 +402,7 @@ class WindowsLauncherTests(unittest.TestCase):
     @unittest.skipUnless(sys.platform == "win32", "CMD execution only on Windows")
     def test_windows_launcher_help_runs_without_network(self):
         root = Path(__file__).resolve().parents[1]
-        p = subprocess.run(["cmd", "/c", str(root / "13_export_novel_inventory.cmd"), "--help"],
+        p = subprocess.run(["cmd", "/c", str(root / "12_export_novel_inventory.cmd"), "--help"],
                            capture_output=True, text=True, cwd=root, timeout=15)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertIn("--mode", p.stdout)
