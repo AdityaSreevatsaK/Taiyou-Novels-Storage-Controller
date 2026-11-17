@@ -108,6 +108,15 @@ For the Retriever comparison, keep a local `Novel-Retriever` checkout next to th
 
 ## Import covers
 
+When uploading covers, the controller stages the validated images and updated
+`data/library.json` in a temporary **local** directory and passes file paths
+to Hugging Face. This supports its Xet upload path instead of triggering the
+in-memory-buffer HTTP fallback. Staged files are removed after each batch,
+including failed attempts; the existing revision checks, single-commit
+catalogue/cover update and safe rerun behaviour are unchanged. Hugging Face
+may still choose HTTP if Xet is disabled or unavailable in the environment.
+
+
 Use `10_upload_covers.cmd` with `Downloaded_Covers.zip`, `novel-cover-images.zip` or its outer GitHub Actions artifact ZIP. The archive must include `covers_manifest.json` and JPEG, PNG or WebP images. The uploader understands the Novel Retriever's `results` manifests and skips failed rows.
 
 ```powershell
