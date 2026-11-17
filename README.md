@@ -108,8 +108,10 @@ Linux and macOS:
 python -m taiyou_storage.cli download --destination downloads --workers 3
 ```
 
-Downloads stream in bounded, parallel transfers (1 to 4 workers). Each ZIP is
-written into a unique temporary file and atomically renamed after transfer.
+Downloads stream in bounded, parallel transfers (1 to 4 workers). Transient
+timeouts, HTTP 429 and selected server errors get at most two bounded retries;
+authentication failures are not retried. Each ZIP is written into a unique
+temporary file and atomically renamed after transfer.
 Failed transfers never replace a previous complete ZIP. The console now
 summarises downloaded, missing and failed files. See
 `downloads/download-report.csv` for individual errors, and
