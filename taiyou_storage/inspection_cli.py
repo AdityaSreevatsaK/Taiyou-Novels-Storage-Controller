@@ -15,7 +15,7 @@ from .inspection import HFReadOnly, compare_retriever, scan
 
 INVENTORY_COLUMNS = ["novel_id", "title", "author", "source_url",
                      "catalogue_chapter_count", "stored_chapter_count",
-                     "chapter_ranges", "missing_chapters", "duplicate_positions",
+                     "chapter_ranges", "missing_chapters", "duplicate_positions", "epub_sha256",
                      "verification_status", "verification_reason"]
 COVER_COLUMNS = ["novel_id", "title", "source_url", "cover_status", "cover_reason"]
 ISSUE_COLUMNS = ["novel_id", "code", "severity", "evidence", "recommended_action"]
@@ -85,7 +85,8 @@ def health_report(result: dict, previous: dict | None = None) -> dict:
         "storage_size_verified": result["storage_size_verified"],
         "integrity_issues": len(issues),
     }
-    old = previous.get("metrics", {}) if isinstance(previous, dict) else {}
+    old = (previous.get("metrics", {}) if isinstance(previous, dict) and
+           previous.get("mode") == result["mode"] else {})
     changes = {key: (value - old[key]) for key, value in metrics.items()
                if isinstance(value, int) and not isinstance(value, bool) and
                isinstance(old.get(key), int) and not isinstance(old[key], bool)}
@@ -136,7 +137,7 @@ def run(argv: list[str] | None = None, backend: HFReadOnly | None = None) -> int
     parser.add_argument("--retriever-root", type=Path,
                         help="Local Novel Retriever checkout containing downloaded_novels.json")
     args = parser.parse_args(argv)
-    mode = args.mode or ("deep" if args.command in ("covers", "integrity") else "quick")
+    mode = args.mode or ("quick" if args.command == "compare" else "deep")
     directory = Path(args.reports_dir)
     try:
         client = backend if backend is not None else HFReadOnly(args.repo)
