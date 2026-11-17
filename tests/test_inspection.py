@@ -1,7 +1,7 @@
 """Offline regression tests for revision-pinned library inspection."""
 from __future__ import annotations
 
-from io import BytesIO
+from io import BytesIO, StringIO
 import csv
 import json
 from pathlib import Path
@@ -350,7 +350,15 @@ class InspectionTests(unittest.TestCase):
             self.assertEqual(present["standalone_cover"], "PRESENT")
             self.assertEqual(present["cover_validation"], "UNVERIFIED")
             reports = Path(tmp) / "reports"
-            self.assertEqual(run(["covers", "--reports-dir", str(reports)], backend), 0)
+            with patch("sys.stdout", new_callable=StringIO) as output:
+                self.assertEqual(run(["covers", "--reports-dir", str(reports)], backend), 0)
+            console = output.getvalue()
+            self.assertIn("=== Cover audit ===", console)
+            self.assertIn("Total novels", console)
+            self.assertIn("Missing standalone cover files", console)
+            self.assertIn("Standalone cover files present", console)
+            self.assertIn("missing-covers.csv", console)
+            self.assertNotIn("No Standalone", console)  # Details stay private in CSV
             with (reports / "missing-covers.csv").open(encoding="utf-8-sig", newline="") as stream:
                 missing_records = list(csv.DictReader(stream))
             with (reports / "cover-audit.csv").open(encoding="utf-8-sig", newline="") as stream:

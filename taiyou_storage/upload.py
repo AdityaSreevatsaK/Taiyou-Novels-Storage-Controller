@@ -17,7 +17,8 @@ import unicodedata
 import xml.etree.ElementTree as ET
 import zipfile
 
-from .core import DEFAULT_REPO, normalized_title, sha256_file, validate_catalogue
+from .console_summary import print_summary
+from .core import DEFAULT_REPO, normalized_title, sha256_file, validate_catalogue, write_csv
 from .paths import book_dir, legacy_dir, readable_dir, folder_from_epub_path
 
 MAX_ZIP = 120 * 1024 * 1024
@@ -378,6 +379,15 @@ def apply_item(api, repo: str, token: str, item: dict, *,
             raise
     raise UploadError("Dataset changed repeatedly; no commit was applied")
 
+def _save_upload_plan(path: Path, rows: list[dict]) -> None:
+    """Store full private per-ZIP details even when the console is concise."""
+    write_csv(path, rows, ["file", "state", "reason"])
+
+
+def _plan_row(filename: object, state: str, reason: object) -> dict:
+    return {"file": str(filename), "state": state, "reason": str(reason)}
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Safe incremental novel ZIP uploader")
     parser.add_argument("folder", nargs="?", default="novels")
@@ -392,6 +402,10 @@ def main(argv=None) -> int:
     parser.add_argument("--apply", action="store_true", help="Write changes to private HF dataset")
     parser.add_argument("--interactive", action="store_true",
                         help="Preview and approve in one revision-guarded process")
+    parser.add_argument("--report", type=Path, default=Path("reports/bulk-upload-plan.csv"),
+                        help="Local report containing every planned ZIP change")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Also print individual ZIP decisions")
     args = parser.parse_args(argv)
     directory = Path(args.folder)
     if not directory.is_dir():
@@ -401,33 +415,52 @@ def main(argv=None) -> int:
     if not paths:
         print("No ZIP archives found", file=sys.stderr)
         return 1
-    local, errors = [], 0
+    local, errors, invalid = [], 0, []
     for path in paths:
         try:
             meta, epub, digest = read_novel(path)
             local.append((path, meta, epub, digest))
         except (UploadError, OSError) as exc:
             errors += 1
-            print(f"[INVALID] {path}: {exc}")
+            invalid.append(_plan_row(path.name, "INVALID", exc))
+            if args.verbose:
+                print(f"[INVALID] {path}: {exc}")
     if errors:
-        print("Invalid ZIPs found: no remote writes performed", file=sys.stderr)
+        _save_upload_plan(args.report, invalid)
+        print_summary("Bulk upload blocked", {
+            "Local ZIPs found": len(paths), "Invalid ZIPs": errors,
+            "Uploaded": 0,
+        }, reports=[args.report], note="Invalid ZIPs found; no remote writes performed.")
         return 1
     try:
         from huggingface_hub import HfApi, hf_hub_download
         from .core import load_remote
         api = HfApi()
         books, sha = load_remote(args.repo, allow_empty=True)
+        duplicates, conflicts = [], []
+        preview_rows = []
         if args.dedupe_local:
             from .local_dedupe import preflight
             local, duplicates, conflicts = preflight(local, books)
-            for duplicate in duplicates:
-                print(f"[DUPLICATE] {duplicate['file']} => {duplicate['preferred']}")
-            for conflict in conflicts:
-                print(f"[CONFLICT] {conflict['file']}: {conflict['reason']} (against {conflict['against']})")
-            print(f"Local preflight: {len(local)} selected, {len(duplicates)} duplicates, "
-                  f"{len(conflicts)} conflicting editions")
+            preview_rows.extend(_plan_row(Path(item["file"]).name, "DUPLICATE",
+                                          "Same content as " + Path(item["preferred"]).name)
+                                for item in duplicates)
+            preview_rows.extend(_plan_row(Path(item["file"]).name, "CONFLICT",
+                                          item["reason"] + " (against " + Path(item["against"]).name + ")")
+                                for item in conflicts)
+            if args.verbose:
+                for item in preview_rows:
+                    print(f"[{item['state']}] {item['file']}: {item['reason']}")
             if conflicts:
-                print("Conflicting local editions: all remote writes blocked.", file=sys.stderr)
+                _save_upload_plan(args.report, preview_rows)
+                print_summary("Bulk upload blocked", {
+                    "Total novels in library": len(books),
+                    "Local ZIPs found": len(paths),
+                    "Equivalent ZIPs skipped": len(duplicates),
+                    "Conflicts detected": len(conflicts),
+                    "Uploaded": 0,
+                }, reports=[args.report],
+                    note="Conflicting local editions; no remote writes performed.")
                 return 2
         files = set(api.list_repo_files(repo_id=args.repo, repo_type="dataset", revision=sha))
         if "data/library.json" not in files:
@@ -480,16 +513,43 @@ def main(argv=None) -> int:
                 if not verified:
                     remote_conflicts.append(
                         f"{path.name}: incoming chapters differ from the stored HF edition")
-            for message in remote_conflicts:
-                print(f"[CONFLICT] {message}")
             if remote_conflicts:
-                print("Remote edition conflicts: all writes blocked.", file=sys.stderr)
+                preview_rows.extend(_plan_row("", "CONFLICT", message)
+                                    for message in remote_conflicts)
+                _save_upload_plan(args.report, preview_rows)
+                if args.verbose:
+                    for message in remote_conflicts:
+                        print(f"[CONFLICT] {message}")
+                print_summary("Bulk upload blocked", {
+                    "Total novels in library": len(books),
+                    "Local ZIPs found": len(paths),
+                    "Equivalent ZIPs skipped": len(duplicates),
+                    "Conflicts detected": len(remote_conflicts),
+                    "Uploaded": 0,
+                }, reports=[args.report],
+                    note="Stored HF edition differs or cannot be verified; no writes performed.")
                 return 2
         instructions = plan(books, local, hashes, files,
                             readable_new=(not args.legacy_new_folders or args.readable_folders))
-        for item in instructions:
-            print(f"[{item['state']}] {item['path'].name}: {item['reason']}")
-        if any(item["state"] == "CONFLICT" for item in instructions):
+        preview_rows.extend(_plan_row(item["path"].name, item["state"], item["reason"])
+                            for item in instructions)
+        _save_upload_plan(args.report, preview_rows)
+        from collections import Counter
+        planned = Counter(item["state"] for item in instructions)
+        if args.verbose:
+            for item in preview_rows:
+                print(f"[{item['state']}] {item['file']}: {item['reason']}")
+        print_summary("Bulk upload preview", {
+            "Total novels in library": len(books),
+            "Local ZIPs found": len(paths),
+            "New novels to upload": planned["NEW"],
+            "Existing novels to update": planned["UPDATE"],
+            "Unchanged novels": planned["UNCHANGED"],
+            "Equivalent ZIPs skipped": len(duplicates),
+            "Conflicts detected": planned["CONFLICT"],
+        }, reports=[args.report],
+            note="Review the report before approval. Existing personal metadata is retained.")
+        if planned["CONFLICT"]:
             print("Conflicts found. All writes blocked.", file=sys.stderr)
             return 2
         if not args.apply and not args.interactive:
@@ -508,12 +568,23 @@ def main(argv=None) -> int:
         if api.dataset_info(args.repo, token=token).sha != sha:
             raise UploadError("Dataset changed since preview; no writes performed")
         expected = sha
+        applied = Counter()
         for item in instructions:
             if item["state"] != "UNCHANGED":
                 status, expected = apply_item(
                     api, args.repo, token, item,
                     expected_revision=expected, return_revision=True)
-                print(f"[{status}] {item['path'].name}")
+                applied[status] += 1
+                if args.verbose:
+                    print(f"[{status}] {item['path'].name}")
+        print_summary("Bulk upload completed", {
+            "New novels uploaded": planned["NEW"],
+            "Existing novels updated": planned["UPDATE"],
+            "Unchanged novels": planned["UNCHANGED"],
+            "Equivalent ZIPs skipped": len(duplicates),
+            "Conflicts detected": 0,
+            "Changes applied": sum(applied.values()),
+        }, reports=[args.report], note="Private HF dataset updated only for approved changes.")
         return 0
     except Exception as exc:
         print(f"ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)

@@ -13,6 +13,7 @@ from pathlib import Path, PurePosixPath
 import re
 import sys
 
+from .console_summary import print_summary
 from .core import DEFAULT_REPO, StorageError, validate_catalogue
 from .inspection import (HFReadOnly, MAX_CATALOGUE, IMAGE_SUFFIXES, inspect_book,
                          Snapshot)
@@ -77,11 +78,11 @@ def generate(backend: HFReadOnly, snapshot: Snapshot, book: dict) -> dict:
 
 
 def plan(backend: HFReadOnly, reports: Path, *, limit: int = 0,
-         force: bool = False) -> tuple[Snapshot, list[tuple[str, bytes]], dict]:
+         force: bool = False, verbose: bool = False) -> tuple[Snapshot, list[tuple[str, bytes]], dict]:
     """Reuse validated local drafts and existing sidecars after interruptions."""
     snapshot = backend.snapshot()
     books = _catalogue(backend, snapshot)
-    selected, statuses = [], Counter()
+    selected, statuses, failures = [], Counter(), []
     drafts = reports / "manifest-backfill"
     drafts.mkdir(parents=True, exist_ok=True)
     for book in books:
@@ -118,8 +119,13 @@ def plan(backend: HFReadOnly, reports: Path, *, limit: int = 0,
             if isinstance(exc, KeyboardInterrupt):
                 raise
             statuses["failed"] += 1
-            print(f"[UNVERIFIED] {book.get('id', '')}: {type(exc).__name__}: {exc}",
-                  file=sys.stderr)
+            failures.append({"novel_id": str(book.get("id", "")),
+                             "error": f"{type(exc).__name__}: {exc}"})
+            if verbose:
+                print(f"[UNVERIFIED] {book.get('id', '')}: {type(exc).__name__}: {exc}",
+                      file=sys.stderr)
+    from .core import write_csv
+    write_csv(drafts / "failures.csv", failures, ["novel_id", "error"])
     statuses["books"] = len(books)
     statuses["pending"] = len(selected)
     return snapshot, selected, dict(statuses)
@@ -163,6 +169,8 @@ def run(argv: list[str] | None = None, backend: HFReadOnly | None = None,
     parser.add_argument("--limit", type=int, default=0,
                         help="Limit new manifests; use 1 for a safe pilot, 0 for all")
     parser.add_argument("--batch-size", type=int, default=10)
+    parser.add_argument("--verbose", action="store_true",
+                        help="Show per-novel inspection errors; also saved in reports")
     parser.add_argument("--force", action="store_true",
                         help="Rebuild even currently valid sidecars")
     group = parser.add_mutually_exclusive_group()
@@ -176,10 +184,17 @@ def run(argv: list[str] | None = None, backend: HFReadOnly | None = None,
     try:
         client = backend if backend is not None else HFReadOnly(args.repo, cache_dir=inspection_cache_dir(args.reports_dir))
         snapshot, selected, status = plan(client, args.reports_dir,
-                                           limit=args.limit, force=args.force)
-        print(f"Private revision {snapshot.revision[:12]}: " +
-              ", ".join(f"{key}={value}" for key, value in sorted(status.items())))
-        print(f"Prepared {len(selected)} small sidecars locally in {args.reports_dir}")
+                                           limit=args.limit, force=args.force,
+                                           verbose=args.verbose)
+        print_summary("Inspection manifest backfill", {
+            "Total novels": status["books"],
+            "Existing valid manifests": status.get("already_valid", 0),
+            "New manifests generated": status.get("generated", 0),
+            "Local drafts reused": status.get("reused_local", 0),
+            "Manifests ready to upload": status["pending"],
+            "Failed inspections": status.get("failed", 0),
+        }, reports=[args.reports_dir / "manifest-backfill" / "failures.csv"],
+            note="Only approved sidecar files may be uploaded; EPUBs and ZIPs unchanged.")
         if not args.apply and not args.interactive:
             print("PREVIEW ONLY. Use --interactive or --apply to upload sidecars.")
             return 0 if not status.get("failed") else 2
@@ -193,7 +208,11 @@ def run(argv: list[str] | None = None, backend: HFReadOnly | None = None,
                 return 0
         committed = apply(client, snapshot, selected, batch_size=args.batch_size,
                           api=api, token=token)
-        print(f"Uploaded {committed} sidecars. Original novels and catalogue unchanged.")
+        print_summary("Manifest backfill completed", {
+            "Manifests uploaded": committed,
+            "Failed inspections": 0,
+        }, reports=[args.reports_dir / "manifest-backfill" / "failures.csv"],
+            note="Original novels and catalogue unchanged.")
         return 0
     except (Exception, KeyboardInterrupt) as exc:
         print(f"ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
