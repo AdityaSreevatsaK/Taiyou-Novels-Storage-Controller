@@ -10,10 +10,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import threading
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from taiyou_storage.cli import run as cli_run
-from taiyou_storage.downloads import _safe_destination, download_archives
+from taiyou_storage.downloads import _download_with_retry, _safe_destination, download_archives
 
 
 def item(number: int):
@@ -68,6 +69,36 @@ class DownloadReliabilityTests(unittest.TestCase):
                 self.assertEqual(
                     (root / "downloads" / entry["path"]).read_bytes(), payload)
             self.assertFalse(list((root / "downloads").rglob("*.part")))
+
+    def test_transient_429_retries_but_unauthorised_does_not(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "synthetic.zip"
+            path.write_bytes(b"source")
+            class FakeHubError(Exception):
+                def __init__(self, code):
+                    self.response = SimpleNamespace(status_code=code)
+            calls = []
+            def temporary(**kwargs):
+                calls.append(kwargs["filename"])
+                if len(calls) < 3:
+                    raise FakeHubError(429)
+                return str(path)
+            with patch("taiyou_storage.downloads.time.sleep") as sleep:
+                self.assertEqual(_download_with_retry(
+                    temporary, repo="owner/private", revision="a" * 40,
+                    relative=item(1)["archive_path"], sleeper=sleep), path)
+                self.assertEqual(sleep.call_count, 2)
+            self.assertEqual(len(calls), 3)
+            rejected = []
+            def unauthorized(**kwargs):
+                rejected.append(kwargs)
+                raise FakeHubError(401)
+            with self.assertRaises(FakeHubError):
+                _download_with_retry(
+                    unauthorized, repo="owner/private", revision="a" * 40,
+                    relative=item(1)["archive_path"],
+                    sleeper=lambda _: self.fail("Must not retry unauthorised requests"))
+            self.assertEqual(len(rejected), 1)
 
     def test_failed_download_preserves_existing_file_and_cleans_partial(self):
         with TemporaryDirectory() as tmp:
