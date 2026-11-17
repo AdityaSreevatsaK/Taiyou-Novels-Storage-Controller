@@ -346,6 +346,16 @@ def apply_item(api, repo: str, token: str, item: dict, *,
             path_in_repo="data/library.json",
             path_or_fileobj=io.BytesIO(
                 (json.dumps(original, ensure_ascii=False, indent=2) + "\n").encode())))
+        # Build the inspection evidence from precisely the bytes in this
+        # revision-guarded commit. Never overwrite existing EPUBs or ZIPs
+        # solely to refresh a sidecar.
+        from .inspection_manifest import upload_sidecar, manifest_path
+        planned_book = {"id": desired_id, "metadata": updated,
+                        "epubPath": epub_path, "archivePath": archive}
+        sidecar = upload_sidecar(planned_book, item["path"], item["epub"])
+        operations.append(CommitOperationAdd(
+            path_in_repo=manifest_path(planned_book),
+            path_or_fileobj=io.BytesIO(sidecar)))
         try:
             result = api.create_commit(
                 repo_id=repo, repo_type="dataset", token=token,
