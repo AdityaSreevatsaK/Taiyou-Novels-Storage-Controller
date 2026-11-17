@@ -60,6 +60,7 @@ def book(cover=True):
 class Backend:
     def __init__(self, root: Path, cover=True):
         self.root = root
+        self.repo = "AdityaSreevatsaK/Taiyous-Novels"
         self.books = [book(cover=cover)]
         self.calls = []
         self.rev = REV
