@@ -7,11 +7,11 @@ Reruns are idempotent: the catalogue and remote cover digests are rechecked.
 from __future__ import annotations
 
 import hashlib
-import io
 import json
 from pathlib import Path, PurePosixPath
 import re
 import time
+from tempfile import TemporaryDirectory
 
 from .core import validate_catalogue
 from .covers import CoverError, EXTENSIONS, make_plan, match_book
@@ -115,79 +115,93 @@ def commit_cover_batch(api, repo: str, token: str, items: list[dict],
                     digest.update(piece)
             hashes[destination] = digest.hexdigest()
         current = make_plan(covers, books, hashes, paths)
-        operations = []
-        statuses = []
-        for original, refreshed in zip(items, current):
-            if (refreshed["status"] in ("MISSING", "CONFLICT") or
-                    refreshed["book_id"] != original["book_id"] or
-                    refreshed["destination"] != original["destination"]):
-                raise CoverError(
-                    "The remote cover match changed; stop and rerun preview")
-            if refreshed["status"] == "UNCHANGED":
-                statuses.append("UNCHANGED")
-                continue
-            cover = refreshed["cover"]
-            book, _ = match_book(books, cover)
-            if not book or book["id"] != refreshed["book_id"]:
-                raise CoverError("Remote book identity changed; no commit made")
-            directory = book_dir(book)
-            destination = refreshed["destination"]
-            if destination != f"{directory}/cover{cover.extension}":
-                raise CoverError("Unexpected cover destination; refusing overwrite")
-            old_path = book["metadata"].get("coverPath")
-            if old_path and old_path not in {
-                    f"{directory}/cover{suffix}" for suffix in COVER_SUFFIXES}:
-                raise CoverError("Unexpected old cover path; refusing overwrite")
-            book["metadata"]["coverPath"] = destination
-            if refreshed["status"] != "LINK":
-                operations.append(CommitOperationAdd(
-                    path_in_repo=destination,
-                    path_or_fileobj=io.BytesIO(cover.data)))
-            statuses.append("LINKED" if refreshed["status"] == "LINK" else
-                            ("UPDATED" if old_path else "UPLOADED"))
-        if not operations and all(x == "UNCHANGED" for x in statuses):
-            return expected_sha, statuses
-        operations.append(CommitOperationAdd(
-            path_in_repo="data/library.json",
-            path_or_fileobj=io.BytesIO(
-                (json.dumps(catalogue, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))))
-        try:
-            result = api.create_commit(
-                repo_id=repo, repo_type="dataset", token=token,
-                operations=operations, parent_commit=expected_sha,
-                commit_message=f"Batch update {len(items)} novel covers")
-        except Exception as exc:
-            response = getattr(exc, "response", None)
-            code = getattr(response, "status_code", None)
-            if code == 429:
-                delay = _short_retry_after(exc)
-                if attempt == 0 and delay is not None:
-                    print(f"Short HF rate-limit cooldown ({delay:.0f}s) before one retry.",
-                          flush=True)
-                    sleeper(delay)
-                    # Never blindly retry an ambiguous commit outcome.
-                    info = api.dataset_info(repo, token=token)
-                    if info.private is not True or info.sha != expected_sha:
-                        raise CoverError(
-                            "Dataset changed after the rate-limit response; "
-                            "rerun the ZIP to reconcile safely") from exc
+        # Staging persists through the entire revision-guarded HF commit,
+        # including the response and bounded 429 retry handling. Files are
+        # never left behind after success, cancellation or error.
+        with TemporaryDirectory(prefix="taiyou-cover-upload-") as staging:
+            operations = []
+            statuses = []
+            for original, refreshed in zip(items, current):
+                if (refreshed["status"] in ("MISSING", "CONFLICT") or
+                        refreshed["book_id"] != original["book_id"] or
+                        refreshed["destination"] != original["destination"]):
+                    raise CoverError(
+                        "The remote cover match changed; stop and rerun preview")
+                if refreshed["status"] == "UNCHANGED":
+                    statuses.append("UNCHANGED")
                     continue
+                cover = refreshed["cover"]
+                book, _ = match_book(books, cover)
+                if not book or book["id"] != refreshed["book_id"]:
+                    raise CoverError("Remote book identity changed; no commit made")
+                directory = book_dir(book)
+                destination = refreshed["destination"]
+                if destination != f"{directory}/cover{cover.extension}":
+                    raise CoverError("Unexpected cover destination; refusing overwrite")
+                old_path = book["metadata"].get("coverPath")
+                if old_path and old_path not in {
+                        f"{directory}/cover{suffix}" for suffix in COVER_SUFFIXES}:
+                    raise CoverError("Unexpected old cover path; refusing overwrite")
+                book["metadata"]["coverPath"] = destination
+                if refreshed["status"] != "LINK":
+                    # Xet's accelerated upload path accepts local file paths, not
+                    # BytesIO buffers. The cover stays private and is removed
+                    # automatically after create_commit returns or raises.
+                    staged_cover = Path(staging) / f"cover-{len(operations):02d}{cover.extension}"
+                    staged_cover.write_bytes(cover.data)
+                    operations.append(CommitOperationAdd(
+                        path_in_repo=destination,
+                        path_or_fileobj=staged_cover))
+                statuses.append("LINKED" if refreshed["status"] == "LINK" else
+                                ("UPDATED" if old_path else "UPLOADED"))
+            if not operations and all(x == "UNCHANGED" for x in statuses):
+                return expected_sha, statuses
+            # Stage catalogue changes as well: a single in-memory operation can
+            # otherwise force a mixed Xet/HTTP fallback in the cover commit.
+            staged_catalogue = Path(staging) / "library.json"
+            staged_catalogue.write_text(
+                json.dumps(catalogue, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8")
+            operations.append(CommitOperationAdd(
+                path_in_repo="data/library.json",
+                path_or_fileobj=staged_catalogue))
+            try:
+                result = api.create_commit(
+                    repo_id=repo, repo_type="dataset", token=token,
+                    operations=operations, parent_commit=expected_sha,
+                    commit_message=f"Batch update {len(items)} novel covers")
+            except Exception as exc:
+                response = getattr(exc, "response", None)
+                code = getattr(response, "status_code", None)
+                if code == 429:
+                    delay = _short_retry_after(exc)
+                    if attempt == 0 and delay is not None:
+                        print(f"Short HF rate-limit cooldown ({delay:.0f}s) before one retry.",
+                              flush=True)
+                        sleeper(delay)
+                        # Never blindly retry an ambiguous commit outcome.
+                        info = api.dataset_info(repo, token=token)
+                        if info.private is not True or info.sha != expected_sha:
+                            raise CoverError(
+                                "Dataset changed after the rate-limit response; "
+                                "rerun the ZIP to reconcile safely") from exc
+                        continue
+                    raise CoverError(
+                        "HF repository commit quota reached (HTTP 429). STOPPING "
+                        "without retrying repeatedly. The quota may take about an "
+                        "hour to reset. Rerun the SAME ZIP later; already uploaded "
+                        "covers will be skipped automatically.") from exc
+                if code in (409, 412):
+                    raise CoverError(
+                        "Another process updated the dataset; rerun the ZIP preview. "
+                        "No blind retry attempted.") from exc
+                raise
+            new_sha = getattr(result, "oid", None)
+            if not isinstance(new_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", new_sha):
                 raise CoverError(
-                    "HF repository commit quota reached (HTTP 429). STOPPING "
-                    "without retrying repeatedly. The quota may take about an "
-                    "hour to reset. Rerun the SAME ZIP later; already uploaded "
-                    "covers will be skipped automatically.") from exc
-            if code in (409, 412):
-                raise CoverError(
-                    "Another process updated the dataset; rerun the ZIP preview. "
-                    "No blind retry attempted.") from exc
-            raise
-        new_sha = getattr(result, "oid", None)
-        if not isinstance(new_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", new_sha):
-            raise CoverError(
-                "Commit response lacked a valid revision. It may have succeeded; "
-                "rerun the ZIP to verify and resume safely.")
-        return new_sha, statuses
+                    "Commit response lacked a valid revision. It may have succeeded; "
+                    "rerun the ZIP to verify and resume safely.")
+            return new_sha, statuses
     raise CoverError("Short rate-limit retry was unsuccessful; rerun later")
 
 
