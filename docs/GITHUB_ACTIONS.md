@@ -49,11 +49,20 @@ The cover workflow uses artifacts from `RichardDaffern/Novel-Retriever` and
 accepts `NOVEL_LIBRARY_ACTIONS_TOKEN` when cross-repository GitHub artifact
 permissions are needed.
 
+## Automated dependency security checks
+
+The existing `CI` workflow now runs a dedicated `pip-audit` job for the
+production requirements and pinned dependency constraints on each PR/push,
+plus a scheduled Monday scan. The audit uses no Hugging Face secrets and
+fails if known security advisories are found. An advisory needs a reviewed
+dependency update and full cross-platform regression tests; never suppress
+a vulnerability merely to obtain a green badge.
+
 ## Retained workflows
 
 | Workflow | Purpose |
 | --- | --- |
-| **CI** | Automatic offline tests on Windows and Linux; never reads private HF |
+| **CI** | Automatic offline tests on Windows/Linux plus weekly and PR dependency vulnerability audit; never reads private HF |
 | **HF - Run library checks (read only)** | Manual combined inspection, counts-only logs |
 | **HF - Export novel names and conflicts PRIVATELY** | Manual export to a separate private HF backup dataset |
 | **HF - Back up entire dataset PRIVATELY** | Manual snapshot and checksum verification |
