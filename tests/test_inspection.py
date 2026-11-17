@@ -273,6 +273,12 @@ class InspectionTests(unittest.TestCase):
             self.assertTrue({"ORPHAN_NOVEL_DIRECTORY", "MISSING_EPUB"} <=
                             {issue["code"] for issue in result["issues"]})
 
+    def test_query_parameters_prevent_false_url_collisions(self):
+        first = canonical_url("https://example.com/book?id=1")
+        second = canonical_url("https://example.com/book?id=2")
+        self.assertNotEqual(first, second)
+        self.assertEqual(canonical_url("https://example.com/"), "")
+
     def test_duplicate_identity_and_url(self):
         first = {"novel_id": IDENT, "title": "First", "author": "X",
                  "source_url": "https://novelfull.com/book.html"}
