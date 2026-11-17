@@ -29,11 +29,12 @@ The upload launchers preview the actual changes and require you to type **YES** 
 | `02_download_all.cmd` | Download existing original ZIPs to `downloads/` |
 | `03_list_novels.cmd` | Export a local CSV of catalogue entries |
 | `04_detect_conflicts.cmd` | Report exact/normalised duplicate titles |
-| **`05_verify_integrity.cmd`** | Verify EPUBs, ZIPs, chapter manifests, cover and catalogue integrity |
-| `13_export_novel_inventory.cmd` | Chapter ranges and missing positions, CSV and JSON |
+| **`05_verify_integrity.cmd`** | Fast remote manifest verification by default; use `--mode deep` for byte-level archive/EPUB inspection |
+| `13_export_novel_inventory.cmd` | Chapter ranges and missing positions from verified sidecars, CSV and JSON |
 | `14_audit_missing_covers.cmd` | Genuine/embedded/missing/broken cover audit |
 | `15_compare_retriever_inventory.cmd` | Compare local Retriever registry and produce private exclusion hashes |
 | `16_library_health_report.cmd` | Local HTML dashboard, JSON and CSV |
+| **`17_backfill_inspection_manifests.cmd`** | Preview and safely migrate existing books to tiny inspection manifests; explicit `--interactive` or `--apply` to write |
 | `06_sync_status.cmd` | Compare local EPUB-derived IDs with remote IDs; **not** full byte verification |
 | `07_backup_catalogue.cmd` | Save a local copy of `data/library.json` |
 | **`10_upload_covers.cmd`** | Import covers with preview, confirmation and resumable batches |
