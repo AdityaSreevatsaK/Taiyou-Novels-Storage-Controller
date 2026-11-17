@@ -18,4 +18,4 @@ PyYAML==6.0.3
 tqdm==4.70.1
 typing_extensions==4.16.0
 
-Pillow==11.3.0
+Pillow==13.0.0
