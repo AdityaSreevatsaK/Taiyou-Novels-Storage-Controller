@@ -194,20 +194,22 @@ def commit_cover_batch(api, repo: str, token: str, items: list[dict],
 def upload_batches(api, repo: str, token: str, changing: list[dict],
                    revision: str, *, batch_size: int = DEFAULT_BATCH_SIZE,
                    commit_pause: float = 2.0,
-                   sleeper=time.sleep) -> tuple[int, int]:
+                   sleeper=time.sleep, verbose: bool = False) -> tuple[int, int]:
     """Resume-safely upload all missing covers; return (commits, changed)."""
     if commit_pause < 0 or commit_pause > 60:
         raise CoverError("Commit pause must be between 0 and 60 seconds")
     groups = group_batches(changing, batch_size=batch_size)
-    print(f"Batched cover upload: {len(changing)} pending cover(s), "
-          f"{len(groups)} commit batch(es), max {batch_size} covers/batch.")
+    if verbose:
+        print(f"Batched cover upload: {len(changing)} pending cover(s), "
+              f"{len(groups)} commit batch(es), max {batch_size} covers/batch.")
     total, commits, changed = len(changing), 0, 0
     processed = 0
     sha = revision
     for n, group in enumerate(groups, 1):
         if n > 1 and commit_pause:
             sleeper(commit_pause)
-        print(f"Batch {n}/{len(groups)}: checking {len(group)} cover(s)...", flush=True)
+        if verbose:
+            print(f"Batch {n}/{len(groups)}: checking {len(group)} cover(s)...", flush=True)
         new_sha, statuses = commit_cover_batch(
             api, repo, token, group, sha, sleeper=sleeper)
         if new_sha != sha:
@@ -217,7 +219,8 @@ def upload_batches(api, repo: str, token: str, changing: list[dict],
             processed += 1
             if status != "UNCHANGED":
                 changed += 1
-            print(f"[{processed}/{total}] {item['title']}: {status}", flush=True)
-        print(f"Batch {n}/{len(groups)} complete; commits this run: {commits}.",
+            if verbose:
+                print(f"[{processed}/{total}] {item['title']}: {status}", flush=True)
+        print(f"Cover batch {n}/{len(groups)} completed ({processed}/{total} checked).",
               flush=True)
     return commits, changed
