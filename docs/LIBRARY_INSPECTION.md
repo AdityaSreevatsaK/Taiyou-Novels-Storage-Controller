@@ -1,6 +1,6 @@
 # Private library inspection and integrity
 
-All five launchers use one read-only inspection engine. Reports and revision caches
+Launchers 05 and 13 to 16 use one read-only inspection engine. Launcher 17 is a separate explicit-write migration. Reports and revision caches
 stay **local** inside the gitignored reports/ directory. Never commit, publish or
 upload private reports to GitHub Actions artefacts.
 
@@ -17,8 +17,10 @@ Authenticate using: hf auth login
 | 05_verify_integrity.cmd | integrity-report.csv and .json |
 | 16_library_health_report.cmd --mode deep | library-health.html, .json and .csv |
 
-All output is written under reports/. Inventory, cover, integrity and health default to deep inspection; comparison defaults to quick.
-Override with --mode quick or --mode deep. Other options: --repo OWNER/PRIVATE-DATASET,
+All output is written under reports/. Every inspection command now defaults to **manifest** mode,
+which downloads only the catalogue and small per-novel inspection manifests. It does not download
+EPUBs, ZIPs or cover images. Override with --mode quick, --mode manifest or --mode deep.
+Use --mode deep for a new byte-level verification; remote checks cannot replace it. Other options: --repo OWNER/PRIVATE-DATASET,
 --workers 1..4 and --reports-dir PATH.
 
 The Retriever comparison expects a local sibling checkout at ../Novel-Retriever
