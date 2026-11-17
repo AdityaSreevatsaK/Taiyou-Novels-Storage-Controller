@@ -597,6 +597,12 @@ def scan(backend: HFReadOnly, mode: str = "manifest", cache_root: Path | None = 
                                    "Rerun the scan when connectivity is stable"))
     finally:
         executor.shutdown(wait=True, cancel_futures=interrupted)
+    # An interruption can arrive after every worker has finished but before
+    # the iterator consumes the futures. Still record the interrupted run.
+    if interrupted and not any(issue["code"] == "SCAN_INTERRUPTED" for issue in problems):
+        problems.append(_issue("", "SCAN_INTERRUPTED", "MEDIUM",
+                               "Scan was interrupted before normal completion",
+                               "Rerun to confirm complete inspection"))
     results.sort(key=lambda r: (normalized_title(r.get("title", "")), r.get("novel_id", "")))
     known_dirs = set()
     for item in books:
