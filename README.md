@@ -21,6 +21,11 @@ The upload launchers preview the actual changes and require you to type **YES** 
 
 **Different private dataset?** Pass `--repo OWNER/PRIVATE-DATASET` to the Python CLI. The catalogue-management, cover and reset tools also support the `HF_DATASET_REPO` environment variable. **The novel uploader does not read that environment variable**: it requires `--repo` for an override. Confirm the target in your preview.
 
+**Windows console behaviour:** All standalone `.cmd` launchers now pause after both
+success and failure, so a double-clicked window stays open for reviewing logs and
+errors. Press any key to close the standalone launcher or return to the menu.
+Passing `--help` to an inspection command exits without pausing, for automation.
+
 ## Available tools
 
 | Windows launcher | Purpose |
