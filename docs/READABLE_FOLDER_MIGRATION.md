@@ -1,5 +1,12 @@
 # Human-readable Hugging Face novel folder migration
 
+> **Historical migration record:** Production folder migration was completed and
+> verified on 14 November 2026. The one-shot pilot, acceptance, readiness and
+> production migration GitHub Actions have since been retired. The steps below
+> document the original safety gates and are **not current runnable Actions**.
+> Current library checks use `HF - Run library checks (read only)`. Do not
+> re-enable production migration without a separate engineering review.
+
 ## Goal and invariants
 
 The private dataset historically stored novels as `data/novels/<id>/`. The migrated format is `data/novels/<id> - <sanitised-title>/`, so owners can recognise novels in the Hugging Face browser.
@@ -13,11 +20,11 @@ The Storage Controller and Library App both accept *both formats* and can coexis
 - Readable-path compatibility: implemented in controller and reader source.
 - New web reader uploads: create readable directories after the reader's verified deployment.
 - Read-only full-production migration plan: `python -m taiyou_storage.migrate_folders`.
-- Actual production migration: **only** the dedicated manual GitHub workflow `HF - Safely migrate readable novel folders` can request this; default is preview-only.
+- Actual production migration: **completed on 14 November 2026**; the former manual migration workflow was retired.
 - The standard local CLI `migrate_folders --apply` **refuses the production dataset**. It is solely for disposable testing.
 - No work on the controller alone can prove the production Cloudflare reader is deployed.
 
-## Mandatory gates before a production move
+## Historical mandatory gates used for the completed production move
 
 1. Latest reader `master` has passed the **production** `Deploy Application` workflow, with the exact master SHA deployed.
 2. The latest `test/readable-folder-batch-acceptance-20261113` branch has a successful `Readable Folder Cross-Repo Acceptance` workflow at its **exact current head SHA**. This tests `apply_migration_batch()` in multiple commits against the **existing, pre-created private** Hugging Face test dataset `AdityaSreevatsaK/Taiyou-Readable-Folder-Test`. The workflow must restore that dataset to its original inventory without deleting the dataset.
@@ -71,7 +78,7 @@ The live disposable acceptance passed before production migration. The productio
 - `taiyou_storage/migrate_folders.py`: preview, deterministic planning, bounded group commits.
 - `taiyou_storage/migrate_production.py`: private snapshot and checksum verification orchestration.
 - `tests/test_readable_folders.py` and `tests/test_readable_production_migration.py`: regression and abort-path tests.
-- `.github/workflows/hf-migrate-readable-folders.yml`: manually approved backup-first production workflow.
+- The former manually approved backup-first production workflow was retired after successful migration.
 - The reader's `src/lib/novel-paths.ts`: browser and Cloudflare gateway path contract.
 
 Do not treat adding this documentation or merging controller code as proof that existing production folders have actually been renamed. Confirm the production Hugging Face dataset inventory after a successful live migration.
