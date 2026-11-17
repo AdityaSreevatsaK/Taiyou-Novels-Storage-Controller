@@ -1,8 +1,10 @@
 # Restore missing source genres in Taiyou's Personal Library
 
+**Historical recovery tool:** This specialised manual workflow remains available for old archived download artefacts when they still exist. It does not run as part of routine library checks.
+
 ## Why this is needed
 
-Older `Novel_Library` chapter-batch EPUB assembly accidentally dropped original
+Older `Novel-Retriever` chapter-batch EPUB assembly accidentally dropped original
 FanFicFare `dc:subject` genres, completion status and (when missing from the
 intermediate JSON) the synopsis. The app therefore correctly displays no
 `sourceTags` for those novels. The downstream downloader is fixed separately.
@@ -20,7 +22,7 @@ Required GitHub repository secrets:
 - `HF_STORAGE_CONTROLLER_TOKEN`: write permission to the private dataset
   `AdityaSreevatsaK/Taiyous-Novels`.
 - `NOVEL_LIBRARY_ACTIONS_TOKEN`: read permission for GitHub Actions artifacts
-  in `RichardDaffern/Novel_Library`.
+  in `RichardDaffern/Novel-Retriever`.
 
 The action fetches the downloader's **original first chapter-batch EPUB
 metadata**, not chapter content from a novel website. It matches each existing
