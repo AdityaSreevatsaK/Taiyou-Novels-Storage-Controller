@@ -6,11 +6,16 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from zipfile import ZipFile
+from zipfile import ZipFile, ZipInfo
 
 from taiyou_storage.local_dedupe import canonical_source, preflight, verified_remote_upgrade
 from taiyou_storage.upload import (UploadError, main, matching_entry,
                                    merged_metadata, plan, read_novel)
+
+
+def _fixture_writestr(archive: ZipFile, name: str, content) -> None:
+    # Fixed ZIP timestamps keep EPUB-derived identities deterministic on Windows.
+    archive.writestr(ZipInfo(name, date_time=(2020, 1, 1, 0, 0, 0)), content)
 
 
 def sample(root: Path, filename: str, *, chapter: str = "An original chapter",
@@ -19,14 +24,14 @@ def sample(root: Path, filename: str, *, chapter: str = "An original chapter",
            with_cover: bool = False, epub_cover_marker: bool = False) -> Path:
     original = io.BytesIO()
     with ZipFile(original, "w") as epub:
-        epub.writestr("mimetype", "application/epub+zip")
-        epub.writestr("META-INF/container.xml",
+        _fixture_writestr(epub, "mimetype", "application/epub+zip")
+        _fixture_writestr(epub, "META-INF/container.xml",
                       '<container><rootfile full-path="book.opf"/></container>')
-        epub.writestr("book.opf",
+        _fixture_writestr(epub, "book.opf",
                       '<package><metadata><title>Example</title><creator>Author</creator></metadata></package>')
-        epub.writestr("chapter.xhtml", chapter)
+        _fixture_writestr(epub, "chapter.xhtml", chapter)
         if epub_cover_marker:
-            epub.writestr("OEBPS/cover.jpg", b"\xff\xd8\xff" + bytes(200))
+            _fixture_writestr(epub, "OEBPS/cover.jpg", b"\xff\xd8\xff" + bytes(200))
     row = [{"position": 1, "file": "chapter_00001.txt",
             "sha256": hashlib.sha256(chapter.encode()).hexdigest()}]
     meta = {"title": "Example", "author": "Author", "source_url": url,
@@ -35,12 +40,12 @@ def sample(root: Path, filename: str, *, chapter: str = "An original chapter",
         meta["cover_image"] = "cover.jpg"
     path = root / filename
     with ZipFile(path, "w") as archive:
-        archive.writestr("novel/source.epub", original.getvalue())
-        archive.writestr("novel/metadata.json", json.dumps(meta))
-        archive.writestr("novel/chapters.json", json.dumps(row))
-        archive.writestr("novel/chapter_00001.txt", chapter)
+        _fixture_writestr(archive, "novel/source.epub", original.getvalue())
+        _fixture_writestr(archive, "novel/metadata.json", json.dumps(meta))
+        _fixture_writestr(archive, "novel/chapters.json", json.dumps(row))
+        _fixture_writestr(archive, "novel/chapter_00001.txt", chapter)
         if with_cover:
-            archive.writestr("novel/cover.jpg", b"\xff\xd8\xff" + bytes(200))
+            _fixture_writestr(archive, "novel/cover.jpg", b"\xff\xd8\xff" + bytes(200))
     return path
 
 
