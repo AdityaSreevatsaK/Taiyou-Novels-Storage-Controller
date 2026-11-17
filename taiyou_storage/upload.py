@@ -17,7 +17,8 @@ import unicodedata
 import xml.etree.ElementTree as ET
 import zipfile
 
-from .core import DEFAULT_REPO, normalized_title, sha256_file, validate_catalogue
+from .console_summary import print_summary
+from .core import DEFAULT_REPO, normalized_title, sha256_file, validate_catalogue, write_csv
 from .paths import book_dir, legacy_dir, readable_dir, folder_from_epub_path
 
 MAX_ZIP = 120 * 1024 * 1024
@@ -378,6 +379,15 @@ def apply_item(api, repo: str, token: str, item: dict, *,
             raise
     raise UploadError("Dataset changed repeatedly; no commit was applied")
 
+def _save_upload_plan(path: Path, rows: list[dict]) -> None:
+    """Store full private per-ZIP details even when the console is concise."""
+    write_csv(path, rows, ["file", "state", "reason"])
+
+
+def _plan_row(filename: object, state: str, reason: object) -> dict:
+    return {"file": str(filename), "state": state, "reason": str(reason)}
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Safe incremental novel ZIP uploader")
     parser.add_argument("folder", nargs="?", default="novels")
@@ -392,6 +402,10 @@ def main(argv=None) -> int:
     parser.add_argument("--apply", action="store_true", help="Write changes to private HF dataset")
     parser.add_argument("--interactive", action="store_true",
                         help="Preview and approve in one revision-guarded process")
+    parser.add_argument("--report", type=Path, default=Path("reports/bulk-upload-plan.csv"),
+                        help="Local report containing every planned ZIP change")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Also print individual ZIP decisions")
     args = parser.parse_args(argv)
     directory = Path(args.folder)
     if not directory.is_dir():
@@ -401,16 +415,22 @@ def main(argv=None) -> int:
     if not paths:
         print("No ZIP archives found", file=sys.stderr)
         return 1
-    local, errors = [], 0
+    local, errors, invalid = [], 0, []
     for path in paths:
         try:
             meta, epub, digest = read_novel(path)
             local.append((path, meta, epub, digest))
         except (UploadError, OSError) as exc:
             errors += 1
-            print(f"[INVALID] {path}: {exc}")
+            invalid.append(_plan_row(path.name, "INVALID", exc))
+            if args.verbose:
+                print(f"[INVALID] {path}: {exc}")
     if errors:
-        print("Invalid ZIPs found: no remote writes performed", file=sys.stderr)
+        _save_upload_plan(args.report, invalid)
+        print_summary("Bulk upload blocked", {
+            "Local ZIPs found": len(paths), "Invalid ZIPs": errors,
+            "Uploaded": 0,
+        }, reports=[args.report], note="Invalid ZIPs found; no remote writes performed.")
         return 1
     try:
         from huggingface_hub import HfApi, hf_hub_download
