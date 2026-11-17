@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 import hashlib
 import json
+import csv
 import unittest
 import zipfile
 
@@ -186,7 +187,13 @@ class EndToEndSmokeTests(unittest.TestCase):
             with fake_cloud(hub):
                 result, output = quiet_run(upload_main, [str(novels), "--repo", REPO])
                 self.assertEqual(result, 0)
-                self.assertEqual(output.count("[NEW]"), 2)
+                self.assertRegex(output, r"New novels to upload\s*:\s*2")
+                self.assertNotIn("[NEW]", output)
+                with (root / "reports/bulk-upload-plan.csv").open(
+                        encoding="utf-8-sig", newline="") as stream:
+                    self.assertEqual(
+                        [row["state"] for row in csv.DictReader(stream)],
+                        ["NEW", "NEW"])
                 self.assertEqual(len(hub.commits), 0)
 
                 with patch("taiyou_storage.upload.sys.stdin") as stdin, \
@@ -203,7 +210,8 @@ class EndToEndSmokeTests(unittest.TestCase):
                 hub.downloads.clear()
                 result, output = quiet_run(upload_main, [str(novels), "--repo", REPO])
                 self.assertEqual(result, 0)
-                self.assertEqual(output.count("[UNCHANGED]"), 2)
+                self.assertRegex(output, r"Unchanged novels\s*:\s*2")
+                self.assertNotIn("[UNCHANGED]", output)
                 self.assertEqual(len(hub.commits), 2)
                 self.assertEqual(len(hub.downloads), 4)
                 self.assertEqual(
@@ -222,7 +230,12 @@ class EndToEndSmokeTests(unittest.TestCase):
 
                 result, output = quiet_run(upload_main, [str(novels), "--repo", REPO])
                 self.assertEqual(result, 0)
-                self.assertIn("[UPDATE] novel-a.zip", output)
+                self.assertRegex(output, r"Existing novels to update\s*:\s*1")
+                with (root / "reports/bulk-upload-plan.csv").open(
+                        encoding="utf-8-sig", newline="") as stream:
+                    self.assertIn(
+                        ("novel-a.zip", "UPDATE"),
+                        {(row["file"], row["state"]) for row in csv.DictReader(stream)})
                 initial_commits = len(hub.commits)
                 result, _ = quiet_run(upload_main, [
                     str(novels), "--repo", REPO, "--apply"])
@@ -260,7 +273,7 @@ class EndToEndSmokeTests(unittest.TestCase):
                         "--batch-size", "1", "--commit-pause", "0"]
                 result, output = quiet_run(covers_run, args)
                 self.assertEqual(result, 0)
-                self.assertIn("NEW=2", output)
+                self.assertRegex(output, r"New covers\s*:\s*2")
                 self.assertEqual(len(hub.commits), baseline)
 
                 hub.fail_commit_number = baseline + 2
@@ -272,14 +285,14 @@ class EndToEndSmokeTests(unittest.TestCase):
                 hub.fail_commit_number = None
                 result, output = quiet_run(covers_run, args + ["--apply"])
                 self.assertEqual(result, 0)
-                self.assertIn("UNCHANGED", output)
+                self.assertIn("Unchanged", output)
                 self.assertEqual(len(hub.commits), baseline + 2)
                 self.assertEqual(sum("coverPath" in b["metadata"] for b in hub.books()), 2)
 
                 count_before = len(hub.commits)
                 result, output = quiet_run(covers_run, args)
                 self.assertEqual(result, 0)
-                self.assertIn("UNCHANGED=2", output)
+                self.assertRegex(output, r"Unchanged\s*:\s*2")
                 self.assertEqual(len(hub.commits), count_before)
 
     def test_full_reset_preview_never_deletes_data(self):
