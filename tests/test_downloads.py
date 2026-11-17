@@ -111,9 +111,13 @@ class DownloadReliabilityTests(unittest.TestCase):
                                   revision="a" * 40, root=root,
                                   downloader=lambda **_: None, workers=9)
             redirect = root / "redirect"
-            redirect.symlink_to(root / "outside", target_is_directory=True)
-            with self.assertRaises(ValueError):
-                _safe_destination(redirect, item(1)["archive_path"])
+            try:
+                redirect.symlink_to(root / "outside", target_is_directory=True)
+            except (OSError, NotImplementedError):
+                pass  # Windows runners may restrict unprivileged symlinks
+            else:
+                with self.assertRaises(ValueError):
+                    _safe_destination(redirect, item(1)["archive_path"])
 
     def test_failed_archive_marks_manifest_incomplete_and_is_not_printed(self):
         with TemporaryDirectory() as tmp, chdir(tmp):
