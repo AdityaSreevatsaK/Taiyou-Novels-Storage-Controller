@@ -12,6 +12,7 @@ import sys
 
 from .core import DEFAULT_REPO
 from .inspection import HFReadOnly, compare_retriever, scan
+from .inspection_cache import inspection_cache_dir
 
 INVENTORY_COLUMNS = ["novel_id", "title", "author", "source_url",
                      "catalogue_chapter_count", "stored_chapter_count",
@@ -140,7 +141,7 @@ def run(argv: list[str] | None = None, backend: HFReadOnly | None = None) -> int
     mode = args.mode or "manifest"
     directory = Path(args.reports_dir)
     try:
-        client = backend if backend is not None else HFReadOnly(args.repo)
+        client = backend if backend is not None else HFReadOnly(args.repo, cache_dir=inspection_cache_dir(directory))
         result = scan(client, mode, directory / ".inspection-cache", args.workers)
         novels, issues = result["novels"], result["issues"]
         if args.command == "inventory":
