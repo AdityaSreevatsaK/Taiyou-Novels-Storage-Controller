@@ -74,7 +74,7 @@ See [smart upload details](README.smart-upload.md) for compatibility and matchin
 
 ## Read-only library inspection
 
-Run the **13–16** tools directly or via the menu. All reports remain in the ignored local `reports/` directory and must never be committed to this public repository. Quick mode uses catalogue/file listings; deep mode validates EPUB, ZIP, chapter files and images. An older EPUB without a verified manifest remains `UNVERIFIED`, never assumed complete from its chapter count.
+Run the **13–16** tools directly or via the menu. All reports remain in the ignored local `reports/` directory and must never be committed to this public repository. Use --mode quick for faster catalogue/file listing checks; default deep mode validates EPUB, ZIP, chapter files and images. An older EPUB without a verified manifest remains `UNVERIFIED`, never assumed complete from its chapter count.
 
 For the Retriever comparison, keep a local `Novel-Retriever` checkout next to this controller, or pass `--retriever-root PATH`. Automatic skipping in Retriever is a separate change. See [inspection guide](docs/LIBRARY_INSPECTION.md) for evidence semantics, privacy and usage.
 
