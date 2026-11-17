@@ -38,6 +38,12 @@ results as public Actions artefacts.
 
 ## Inspection toolkit update, 17 November 2026
 
+User-facing operational procedures now live in `docs/USER_GUIDE.md` and
+`docs/SAFETY_AND_RECOVERY.md`. The root README is intentionally a short
+entry point; the detailed smart-upload guide is in `docs/SMART_UPLOAD.md`
+with `README.smart-upload.md` retained only as a compatibility pointer.
+Update the appropriate guide if implementation behaviour changes.
+
 The former 05 integrity placeholder has been replaced by a functional,
 **read-only** inspection engine in taiyou_storage/inspection.py and
 taiyou_storage/inspection_cli.py. Windows launchers 12 (chapter inventory),
@@ -74,7 +80,7 @@ An agent beginning work in this repository should:
 9. Do not run a real `--apply` operation against the owner's primary dataset as a smoke test. Use synthetic data and a separate, disposable **private** test dataset only with explicit permission.
 10. Treat the owner’s current instructions about scope, release timing, and exclusions as more important than the historical preferences described below.
 
-**Other useful documents:** [README](README.md), [smart upload details](README.smart-upload.md), [GitHub Actions security](docs/GITHUB_ACTIONS.md), [historical genre repair](docs/GENRE_REPAIR.md), [release process](docs/RELEASING.md), [changelog](CHANGELOG.md), and [v0.1.0 notes](docs/releases/v0.1.0.md).
+**Other useful documents:** [README](README.md), [documentation index](docs/README.md), [smart upload details](docs/SMART_UPLOAD.md), [GitHub Actions security](docs/GITHUB_ACTIONS.md), [historical genre repair](docs/GENRE_REPAIR.md), [release process](docs/RELEASING.md), [changelog](CHANGELOG.md), and [v0.1.0 notes](docs/releases/v0.1.0.md).
 
 ### 0.1 Verified versus inferred information
 
@@ -158,8 +164,8 @@ The source downloader, controller and reader have separate responsibilities. Do 
 ```text
 Taiyou-Novels-Storage-Controller/
 ├── AGENTS.md                         # This agent-oriented engineering handbook
-├── README.md                         # Concise user-facing setup and guidance
-├── README.smart-upload.md            # Technical novel uploader reference
+├── README.md                         # Concise quick start and navigation
+├── README.smart-upload.md            # Compatibility pointer to docs/SMART_UPLOAD.md
 ├── CHANGELOG.md                      # Version history
 ├── VERSION                            # Current release version; e.g. 0.1.0
 ├── requirements.txt                   # Hugging Face dependency with constraints
