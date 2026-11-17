@@ -28,8 +28,9 @@ by default. Use --retriever-root PATH to override. Alternatively run:
 py -m taiyou_storage.inspection_cli compare --registry "C:\Novel-Retriever\downloaded_novels.json" --planned "C:\Novel-Retriever\curated_novels.json"
 ~~~
 
-Repeat --planned for additional JSON lists. A recorded complete download is
-not proof that its GitHub Actions artefact has not expired.
+Repeat --planned for additional JSON lists. A recorded complete download is not proof that its GitHub Actions artefact has not expired.
+A registry entry covering only a limited chapter range is reported as
+PARTIALLY_DOWNLOADED instead of being mistaken for a complete download.
 
 ## Evidence and interpretation
 
