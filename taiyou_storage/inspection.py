@@ -1,0 +1,541 @@
+"""Read-only, revision-pinned inspection of Taiyou's private HF dataset.
+
+No HF mutation APIs are imported or called. All reports and caches stay local.
+Quick mode establishes only listing-level facts; deep mode checks file bytes.
+"""
+from __future__ import annotations
+
+from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from io import BytesIO
+import hashlib
+import json
+from pathlib import Path, PurePosixPath
+import re
+import unicodedata
+from urllib.parse import urlsplit, urlunsplit
+import xml.etree.ElementTree as ET
+import zipfile
+
+from .core import DEFAULT_REPO, StorageError, normalized_title
+from .paths import book_dir, validate_book_paths
+from .upload import validate_zip_budget
+
+MAX_IMAGE = 12 * 1024 * 1024
+MAX_MANIFEST = 12 * 1024 * 1024
+MAX_CATALOGUE = 32 * 1024 * 1024
+MAX_WORKERS = 4
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
+PLACEHOLDER = re.compile(r"(placeholder|generated|default.cover|no.cover|cover.unavailable)", re.I)
+POSITION_KEYS = ("position", "chapter_number", "chapterNumber", "number")
+FILE_KEYS = ("file", "filename", "path")
+
+
+def canonical_url(value: object) -> str:
+    """Conservative URL identity. No speculative cross-site equivalence."""
+    if not isinstance(value, str):
+        return ""
+    try:
+        url = urlsplit(value.strip())
+        if url.scheme.lower() not in ("http", "https") or not url.hostname or url.username:
+            return ""
+        host = url.hostname.casefold().removeprefix("www.")
+        port = (":" + str(url.port)) if url.port else ""
+        path = url.path.rstrip("/") or "/"
+        return urlunsplit(("https", host + port, path, "", ""))
+    except ValueError:
+        return ""
+
+
+def range_strings(values: list[int]) -> list[str]:
+    unique = sorted(set(values))
+    if not unique:
+        return []
+    result = []
+    left = right = unique[0]
+    for value in unique[1:]:
+        if value == right + 1:
+            right = value
+        else:
+            result.append(str(left) if left == right else f"{left}-{right}")
+            left = right = value
+    result.append(str(left) if left == right else f"{left}-{right}")
+    return result
+
+
+def chapter_positions(records: object, archive_names: set[str] | None = None,
+                      complete: bool = False) -> dict:
+    """Verify explicit positions, not enumeration order or total chapter count."""
+    if not isinstance(records, list):
+        return {"status": "UNVERIFIED", "ranges": [], "missing": [],
+                "duplicates": [], "count": 0, "reason": "Manifest is not a chapter array"}
+    positions, invalid, absent, verified = [], 0, 0, 0
+    by_basename = defaultdict(list)
+    if archive_names is not None:
+        for name in archive_names:
+            by_basename[PurePosixPath(name).name.casefold()].append(name)
+    for entry in records:
+        if not isinstance(entry, dict):
+            invalid += 1
+            continue
+        number = next((entry[k] for k in POSITION_KEYS if k in entry), None)
+        if isinstance(number, bool) or not isinstance(number, int) or number < 1:
+            invalid += 1
+            continue
+        positions.append(number)
+        filename = next((entry[k] for k in FILE_KEYS if k in entry), None)
+        if archive_names is None:
+            continue
+        if not isinstance(filename, str) or not filename.strip():
+            absent += 1
+        else:
+            filename = filename.replace("\\", "/").lstrip("./")
+            matches = ([filename] if filename in archive_names
+                       else by_basename.get(PurePosixPath(filename).name.casefold(), []))
+            if len(matches) == 1:
+                verified += 1
+            else:
+                absent += 1
+    frequencies = Counter(positions)
+    duplicates = sorted(n for n, count in frequencies.items() if count > 1)
+    missing = [n for n in range(1, max(positions, default=0) + 1) if n not in frequencies]
+    problems = bool(duplicates or missing or invalid or absent)
+    status = ("INCOMPLETE" if problems else
+              "VERIFIED_COMPLETE" if positions and complete and verified == len(positions) else
+              "VERIFIED_RANGE" if positions and verified == len(positions) else "UNVERIFIED")
+    detail = []
+    if invalid:
+        detail.append(f"{invalid} malformed chapter entries")
+    if absent:
+        detail.append(f"{absent} missing or unresolvable chapter files")
+    if missing:
+        detail.append("Chapter positions have gaps")
+    if duplicates:
+        detail.append("Chapter positions are duplicated")
+    if status == "VERIFIED_RANGE":
+        detail.append("Available range verified; end-of-novel not established")
+    if status == "UNVERIFIED" and not detail:
+        detail.append("No independently verified chapter files")
+    return {"status": status, "ranges": range_strings(positions),
+            "missing": range_strings(missing), "duplicates": duplicates,
+            "count": verified, "manifest_entries": len(records),
+            "reason": "; ".join(detail), "malformed": invalid, "absent_files": absent}
+
+
+def inspect_archive(path: Path) -> dict:
+    """Validate ZIP and inspect the real downloader's chapters.json if present."""
+    with zipfile.ZipFile(path) as archive:
+        validate_zip_budget(archive)
+        if archive.testzip():
+            raise ValueError("Archive CRC validation failed")
+        names = {item.filename for item in archive.infolist() if not item.is_dir()}
+        matches = [name for name in names if PurePosixPath(name).name.casefold() == "chapters.json"]
+        if len(matches) > 1:
+            raise ValueError("Multiple chapters.json manifests")
+        if not matches:
+            return chapter_positions(None)
+        item = archive.getinfo(matches[0])
+        if item.file_size > MAX_MANIFEST:
+            raise ValueError("Chapter manifest exceeds size limit")
+        manifest = json.loads(archive.read(matches[0]).decode("utf-8-sig"))
+        explicit_complete = isinstance(manifest, dict) and manifest.get("complete") is True
+        records = manifest.get("chapters") if isinstance(manifest, dict) else manifest
+        return chapter_positions(records, names, complete=explicit_complete)
+
+
+def validate_epub(path: Path) -> None:
+    with zipfile.ZipFile(path) as archive:
+        validate_zip_budget(archive, epub=True)
+        names = set(archive.namelist())
+        if "mimetype" not in names or "META-INF/container.xml" not in names:
+            raise ValueError("EPUB lacks mimetype or container.xml")
+        if archive.testzip():
+            raise ValueError("EPUB CRC validation failed")
+        if archive.getinfo("META-INF/container.xml").file_size > 1024 * 1024:
+            raise ValueError("EPUB container.xml too large")
+        root = ET.fromstring(archive.read("META-INF/container.xml"))
+        entry = next((node for node in root.iter() if node.tag.endswith("rootfile")), None)
+        opf = entry.get("full-path") if entry is not None else None
+        if not opf or opf not in names:
+            raise ValueError("EPUB package document missing")
+
+
+def valid_image(data: bytes, suffix: str) -> bool:
+    if not 0 < len(data) <= MAX_IMAGE or suffix.lower() not in IMAGE_SUFFIXES:
+        return False
+    from PIL import Image, UnidentifiedImageError
+    try:
+        with Image.open(BytesIO(data)) as image:
+            if image.format not in {"JPEG", "PNG", "WEBP"}:
+                return False
+            width, height = image.size
+            if width < 80 or height < 100 or width * height > 30_000_000:
+                return False
+            image.verify()
+        with Image.open(BytesIO(data)) as image:
+            image.load()
+        return True
+    except (OSError, ValueError, UnidentifiedImageError, Image.DecompressionBombError):
+        return False
+
+
+def embedded_cover(epub: Path) -> bool:
+    """Require an explicit OPF cover declaration, not an arbitrary EPUB image."""
+    with zipfile.ZipFile(epub) as z:
+        root = ET.fromstring(z.read("META-INF/container.xml"))
+        entry = next((e for e in root.iter() if e.tag.endswith("rootfile")), None)
+        opf = entry.get("full-path") if entry is not None else None
+        if not opf or z.getinfo(opf).file_size > 8 * 1024 * 1024:
+            return False
+        package = ET.fromstring(z.read(opf))
+        ids = set()
+        hrefs = {}
+        for element in package.iter():
+            if element.tag.endswith("item"):
+                ident, href = element.get("id"), element.get("href")
+                if ident and href:
+                    hrefs[ident] = href
+                if "cover-image" in element.get("properties", "").split():
+                    ids.add(ident)
+            elif element.tag.endswith("meta") and element.get("name", "").lower() == "cover":
+                ids.add(element.get("content"))
+        base = PurePosixPath(opf).parent
+        for ident in ids:
+            href = hrefs.get(ident)
+            if not href:
+                continue
+            full = str(base / href) if str(base) != "." else href
+            if ".." in PurePosixPath(full).parts or full not in z.namelist():
+                continue
+            item = z.getinfo(full)
+            if item.file_size <= MAX_IMAGE and valid_image(z.read(full), PurePosixPath(full).suffix):
+                return True
+    return False
+
+
+@dataclass
+class Snapshot:
+    revision: str
+    files: dict[str, int | None]
+
+
+class HFReadOnly:
+    """The sole network boundary. Inject a fixture implementation for tests."""
+    def __init__(self, repo: str = DEFAULT_REPO, token: str | None = None):
+        self.repo, self.token = repo, token
+
+    def snapshot(self) -> Snapshot:
+        from huggingface_hub import HfApi
+        api = HfApi()
+        info = api.dataset_info(self.repo, token=self.token)
+        if info.private is not True or not info.sha:
+            raise StorageError("Dataset must be private and have an immutable revision")
+        revision = info.sha
+        files = {}
+        try:
+            tree = api.list_repo_tree(repo_id=self.repo, repo_type="dataset",
+                                      recursive=True, revision=revision, token=self.token)
+            for entry in tree:
+                path = getattr(entry, "path", None)
+                if path and not path.endswith("/") and not entry.__class__.__name__.endswith("Folder"):
+                    files[path] = getattr(entry, "size", None)
+        except (AttributeError, TypeError, NotImplementedError):
+            files = {p: None for p in api.list_repo_files(
+                repo_id=self.repo, repo_type="dataset", revision=revision, token=self.token)}
+        return Snapshot(revision, files)
+
+    def download(self, name: str, revision: str) -> Path:
+        from huggingface_hub import hf_hub_download
+        return Path(hf_hub_download(repo_id=self.repo, repo_type="dataset",
+                                    filename=name, revision=revision, token=self.token))
+
+
+def _issue(ident: str, kind: str, severity: str, evidence: str, action: str) -> dict:
+    return {"novel_id": ident, "code": kind, "severity": severity,
+            "evidence": evidence, "recommended_action": action}
+
+
+def _book_id(item: object) -> str:
+    return str(item.get("id", "")) if isinstance(item, dict) else ""
+
+
+def inspect_book(book: dict, files: dict, revision: str, backend: HFReadOnly,
+                 mode: str) -> tuple[dict, list[dict]]:
+    ident = _book_id(book)
+    meta = book.get("metadata") if isinstance(book.get("metadata"), dict) else {}
+    title = str(meta.get("title") or "")
+    archive = book.get("archivePath")
+    epub = book.get("epubPath")
+    source = str(meta.get("sourceUrl") or "")
+    row = {"novel_id": ident, "title": title, "author": str(meta.get("author") or ""),
+           "source_url": source, "catalogue_chapter_count": meta.get("chapterCount"),
+           "stored_chapter_count": None, "chapter_ranges": [], "missing_chapters": [],
+           "duplicate_positions": [], "verification_status": "UNVERIFIED",
+           "verification_reason": "Quick scan; chapters not inspected",
+           "cover_status": "UNVERIFIED", "cover_reason": "Not checked",
+           "epub_path": epub or "", "archive_path": archive or ""}
+    issues = []
+    try:
+        folder = validate_book_paths(book)
+    except (TypeError, KeyError, ValueError) as exc:
+        issues.append(_issue(ident, "INVALID_CATALOGUE_PATH", "HIGH", str(exc),
+                             "Repair the catalogue path after verifying the original files"))
+        row["cover_reason"] = "Unsafe or malformed catalogue references"
+        return row, issues
+    if not title or not meta.get("author"):
+        issues.append(_issue(ident, "MISSING_METADATA", "LOW", "Title or author absent",
+                             "Recover verified source metadata"))
+    if not isinstance(epub, str) or epub not in files:
+        issues.append(_issue(ident, "MISSING_EPUB", "CRITICAL", str(epub),
+                             "Restore source.epub from a verified backup"))
+    if not archive or archive not in files:
+        issues.append(_issue(ident, "MISSING_ARCHIVE", "HIGH", str(archive),
+                             "Recover original.zip from a verified backup"))
+    cover = meta.get("coverPath") or book.get("coverPath")
+    candidates = sorted(p for p in files if p.startswith(folder + "/cover")
+                        and PurePosixPath(p).suffix.casefold() in IMAGE_SUFFIXES
+                        and PurePosixPath(p).parent.as_posix() == folder)
+    generated = bool(meta.get("coverGenerated") or meta.get("generatedCover") or
+                     meta.get("coverIsGenerated"))
+    if cover and cover not in files:
+        row["cover_status"], row["cover_reason"] = "BROKEN", "Referenced cover file is absent"
+    elif generated or (cover and PLACEHOLDER.search(str(cover))):
+        row["cover_status"], row["cover_reason"] = "UNVERIFIED", "Possible generated placeholder"
+    elif mode == "quick":
+        row["cover_status"] = "UNVERIFIED"
+        row["cover_reason"] = ("Standalone image exists but bytes not checked" if candidates
+                               else "No standalone image; embedded cover not checked")
+    else:
+        try:
+            chosen = cover if cover else candidates[0] if len(candidates) == 1 else ""
+            if chosen and chosen in files:
+                path = backend.download(chosen, revision)
+                if path.stat().st_size > MAX_IMAGE:
+                    raise ValueError("Cover exceeds maximum image size")
+                if valid_image(path.read_bytes(), PurePosixPath(chosen).suffix):
+                    row["cover_status"] = "AVAILABLE"
+                    row["cover_reason"] = "Decoded standalone image" + (" (not linked)" if not cover else "")
+                    if not cover:
+                        issues.append(_issue(ident, "UNLINKED_COVER", "LOW", chosen,
+                                             "Link this existing cover in the catalogue"))
+                else:
+                    row["cover_status"], row["cover_reason"] = "BROKEN", "Standalone image is corrupt or invalid"
+            elif candidates:
+                row["cover_status"], row["cover_reason"] = "UNVERIFIED", "Ambiguous standalone cover candidates"
+            elif epub in files:
+                row["cover_status"] = ("EMBEDDED_ONLY" if embedded_cover(backend.download(epub, revision))
+                                       else "MISSING")
+                row["cover_reason"] = ("Valid OPF-declared embedded cover" if row["cover_status"] == "EMBEDDED_ONLY"
+                                        else "No valid standalone or declared embedded cover")
+            else:
+                row["cover_status"], row["cover_reason"] = "UNVERIFIED", "EPUB unavailable for embedded-cover check"
+        except Exception as exc:
+            row["cover_status"], row["cover_reason"] = "UNVERIFIED", f"Cover check failed: {type(exc).__name__}"
+            issues.append(_issue(ident, "COVER_SCAN_FAILED", "MEDIUM", type(exc).__name__,
+                                 "Retry the deep scan once remote access recovers"))
+    if row["cover_status"] in {"MISSING", "BROKEN"}:
+        issues.append(_issue(ident, "COVER_" + row["cover_status"], "MEDIUM",
+                             row["cover_reason"], "Restore an authentic cover and repair its reference"))
+    if mode != "deep":
+        return row, issues
+    if epub in files:
+        try:
+            validate_epub(backend.download(epub, revision))
+        except Exception as exc:
+            issues.append(_issue(ident, "CORRUPT_EPUB", "HIGH", type(exc).__name__ + ": " + str(exc),
+                                 "Restore or regenerate EPUB from verified source"))
+    if archive in files:
+        try:
+            details = inspect_archive(backend.download(archive, revision))
+            row.update({"stored_chapter_count": details.get("count"),
+                        "chapter_ranges": details.get("ranges", []),
+                        "missing_chapters": details.get("missing", []),
+                        "duplicate_positions": details.get("duplicates", []),
+                        "verification_status": details["status"],
+                        "verification_reason": details.get("reason", "")})
+            if details["status"] == "INCOMPLETE":
+                issues.append(_issue(ident, "INCOMPLETE_CHAPTERS", "HIGH",
+                                     row["verification_reason"] + "; gaps=" + str(row["missing_chapters"]),
+                                     "Re-download the missing chapter positions and verify files"))
+            if details["status"] == "UNVERIFIED":
+                issues.append(_issue(ident, "CHAPTER_COVERAGE_UNKNOWN", "LOW",
+                                     row["verification_reason"], "Obtain verified chapter manifest"))
+            reported = meta.get("chapterCount")
+            if isinstance(reported, int) and reported > 0 and details.get("manifest_entries") is not None:
+                if reported != details["manifest_entries"]:
+                    issues.append(_issue(ident, "CHAPTER_COUNT_MISMATCH", "MEDIUM",
+                                         f"Catalogue={reported}, manifest={details['manifest_entries']}",
+                                         "Verify the download and reconcile catalogue metadata"))
+        except Exception as exc:
+            row["verification_reason"] = "Archive inspection failed: " + type(exc).__name__
+            issues.append(_issue(ident, "CORRUPT_OR_UNREADABLE_ARCHIVE", "HIGH",
+                                 type(exc).__name__ + ": " + str(exc),
+                                 "Retry or restore the original archive"))
+    return row, issues
+
+
+def duplicate_candidates(rows: list[dict]) -> list[dict]:
+    grouped = defaultdict(list)
+    for r in rows:
+        author = normalized_title(r["author"])
+        title = normalized_title(r["title"])
+        source = canonical_url(r["source_url"])
+        if source:
+            grouped["source:" + source].append(r)
+        if title and author:
+            grouped["title-author:" + title + "|" + author].append(r)
+    matches = []
+    seen = set()
+    for key, group in grouped.items():
+        for i, first in enumerate(group):
+            for second in group[i + 1:]:
+                pair = tuple(sorted((first["novel_id"], second["novel_id"])))
+                if pair not in seen and pair[0] != pair[1]:
+                    seen.add(pair)
+                    matches.append({"first_id": pair[0], "second_id": pair[1],
+                                    "reason": key.split(":", 1)[0], "review_required": True})
+    return matches
+
+
+def scan(backend: HFReadOnly, mode: str = "quick", cache_root: Path | None = None,
+         workers: int = 3) -> dict:
+    if mode not in {"quick", "deep"}:
+        raise ValueError("mode must be quick or deep")
+    if not 1 <= workers <= MAX_WORKERS:
+        raise ValueError("workers must be between 1 and 4")
+    snapshot = backend.snapshot()
+    if "data/library.json" not in snapshot.files:
+        raise StorageError("No data/library.json at pinned revision")
+    catalogue = backend.download("data/library.json", snapshot.revision)
+    if catalogue.stat().st_size > MAX_CATALOGUE:
+        raise StorageError("Catalogue exceeds safety limit")
+    payload = json.loads(catalogue.read_text(encoding="utf-8-sig"))
+    if not isinstance(payload, dict) or payload.get("version") != 1 or not isinstance(payload.get("books"), list):
+        raise StorageError("Unsupported catalogue format")
+    books = payload["books"]
+    results, problems = [], []
+    def work(item):
+        ident = _book_id(item)
+        if not isinstance(item, dict):
+            return ({"novel_id": ident, "title": "", "author": "", "source_url": "",
+                     "verification_status": "UNVERIFIED", "cover_status": "UNVERIFIED"}, [
+                         _issue(ident, "MALFORMED_BOOK", "HIGH", "Catalogue entry is not an object",
+                                "Repair the catalogue record")])
+        cached = None
+        if cache_root is not None and mode == "deep":
+            fingerprint = hashlib.sha256((snapshot.revision + "|" + ident + "|" +
+                                           json.dumps(item, sort_keys=True, ensure_ascii=False)).encode()).hexdigest()
+            cached = cache_root / snapshot.revision / (fingerprint + ".json")
+            if cached.exists():
+                try:
+                    return tuple(json.loads(cached.read_text(encoding="utf-8")))
+                except (ValueError, OSError):
+                    pass
+        try:
+            value = inspect_book(item, snapshot.files, snapshot.revision, backend, mode)
+        except Exception as exc:
+            value = ({"novel_id": ident, "title": "", "author": "", "source_url": "",
+                      "verification_status": "UNVERIFIED", "cover_status": "UNVERIFIED"}, [
+                          _issue(ident, "INSPECTION_FAILED", "HIGH", type(exc).__name__,
+                                 "Retry the scan; do not assume this book is complete")])
+        if cached is not None:
+            cached.parent.mkdir(parents=True, exist_ok=True)
+            tmp = cached.with_suffix(".tmp")
+            tmp.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
+            tmp.replace(cached)
+        return value
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [executor.submit(work, item) for item in books]
+        for future in as_completed(futures):
+            row, issues = future.result()
+            results.append(row)
+            problems.extend(issues)
+    results.sort(key=lambda r: (normalized_title(r.get("title", "")), r.get("novel_id", "")))
+    known_dirs = set()
+    for item in books:
+        try:
+            known_dirs.add(book_dir(item))
+        except (TypeError, KeyError, ValueError):
+            pass
+    disk_dirs = {str(PurePosixPath(name).parent) for name in snapshot.files
+                 if name.startswith("data/novels/") and
+                 PurePosixPath(name).name in {"source.epub", "original.zip",
+                                             "cover.jpg", "cover.jpeg", "cover.png", "cover.webp"}}
+    for directory in sorted(disk_dirs - known_dirs):
+        problems.append(_issue("", "ORPHAN_NOVEL_DIRECTORY", "HIGH", directory,
+                               "Inspect the orphan and reconcile the catalogue without deleting it"))
+    ids = [r["novel_id"] for r in results if r.get("novel_id")]
+    for ident, count in Counter(ids).items():
+        if count > 1:
+            problems.append(_issue(ident, "DUPLICATE_ID", "HIGH", f"{count} catalogue entries",
+                                   "Resolve duplicate catalogue references safely"))
+    duplicates = duplicate_candidates(results)
+    for match in duplicates:
+        problems.append(_issue(match["first_id"], "SUSPICIOUS_DUPLICATE", "MEDIUM",
+                               match["second_id"] + " (" + match["reason"] + ")",
+                               "Manually compare editions before deciding whether to merge"))
+    return {"schema_version": 1, "revision": snapshot.revision, "mode": mode,
+            "total_storage_bytes": sum(size for size in snapshot.files.values() if isinstance(size, int)),
+            "storage_size_verified": all(isinstance(v, int) for v in snapshot.files.values()),
+            "novels": results, "issues": problems, "duplicate_candidates": duplicates}
+
+
+def compare_retriever(rows: list[dict], registry: dict | None,
+                      planned: list[dict] | None) -> dict:
+    """Conservative identity matching. Never publish this result to GitHub."""
+    by_url, by_name = defaultdict(set), defaultdict(set)
+    for row in rows:
+        ident = row.get("novel_id", "")
+        url = canonical_url(row.get("source_url"))
+        if url:
+            by_url[url].add(ident)
+        title = normalized_title(row.get("title") or "")
+        author = normalized_title(row.get("author") or "")
+        if title and author:
+            by_name[(title, author)].add(ident)
+    def match(item):
+        url = canonical_url(item.get("url") or item.get("source_url") or item.get("sourceUrl"))
+        ids = by_url.get(url, set()) if url else set()
+        if len(ids) == 1:
+            return "ALREADY_IN_HF", list(ids), "source URL"
+        if len(ids) > 1:
+            return "AMBIGUOUS", sorted(ids), "multiple matching source URLs"
+        title = normalized_title(str(item.get("title") or ""))
+        author = normalized_title(str(item.get("author") or ""))
+        if title and author and len(by_name.get((title, author), set())) == 1:
+            return "ALREADY_IN_HF", sorted(by_name[(title, author)]), "title and author"
+        if title and author and len(by_name.get((title, author), set())) > 1:
+            return "AMBIGUOUS", sorted(by_name[(title, author)]), "multiple title/author matches"
+        if title and not author and any(t == title for t, _ in by_name):
+            return "AMBIGUOUS", [], "same title but author missing"
+        return "NOT_IN_HF", [], "no conservative match"
+    output = []
+    known = set()
+    for group, records in (("download_registry", (registry or {}).get("novels", [])),
+                           ("planned", planned or [])):
+        for item in records:
+            if not isinstance(item, dict):
+                continue
+            key = (canonical_url(item.get("url") or item.get("source_url") or ""),
+                   normalized_title(str(item.get("title") or "")))
+            if key in known:
+                continue
+            known.add(key)
+            status, ids, reason = match(item)
+            recorded = any(isinstance(d, dict) and d.get("status") == "complete"
+                           for d in item.get("downloads", []) if isinstance(item.get("downloads", []), list))
+            output.append({"title": str(item.get("title") or ""), "author": str(item.get("author") or ""),
+                           "source_url": str(item.get("url") or item.get("source_url") or ""),
+                           "state": ("ALREADY_IN_HF" if status == "ALREADY_IN_HF" else
+                                     "AMBIGUOUS" if status == "AMBIGUOUS" else
+                                     "DOWNLOADED_NOT_UPLOADED" if recorded else "TO_DOWNLOAD"),
+                           "hf_ids": ids, "reason": reason,
+                           "download_recorded": recorded})
+    # Hashes are local-only, intentionally without titles or novel IDs.
+    hashes = sorted({hashlib.sha256(url.encode("utf-8")).hexdigest()
+                     for row in rows if (url := canonical_url(row.get("source_url")))})
+    return {"records": output,
+            "exclusions": {"schema_version": 1, "algorithm": "sha256-canonical-url-v1",
+                           "source_url_sha256": hashes,
+                           "warning": "Private local file; hashes can be dictionary-guessed. Never commit."}}
