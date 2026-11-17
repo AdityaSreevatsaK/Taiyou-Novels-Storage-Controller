@@ -84,3 +84,34 @@ The tooling never repairs, deletes, uploads or triggers downloads.
 
 Scans are local-only. CI uses fixtures and mocked Hugging Face calls; it does
 not access the live dataset or write any reports to GitHub Actions artefacts.
+
+## Local download cache cleanup
+
+Inspection and one-time backfill now use a dedicated, marked Hub cache at
+`reports/.inspection-download-cache/`. Shared Hugging Face caches are no longer
+used by these inspections; uploading novellas and unrelated programmes retain
+their own caching behaviour.
+
+Use `18_cleanup_inspection_downloads.cmd` to preview the size and
+`18_cleanup_inspection_downloads.cmd --apply` to request local interactive
+deletion. The cleaner refuses an unmarked directory or another dataset's marker.
+
+Files downloaded by **older versions** of the inspection scripts may be
+inside the shared HF cache. Run:
+
+~~~powershell
+.\\18_cleanup_inspection_downloads.cmd --legacy-shared-cache
+.\\18_cleanup_inspection_downloads.cmd --legacy-shared-cache --apply
+~~~
+
+This extra flag precisely selects cached `data/novels/**/source.epub`,
+`original.zip` and `cover.{jpg,jpeg,png,webp}` for the selected dataset.
+It uses the HF library's `delete_files` strategy so a shared blob is preserved
+when other snapshot entries refer to it. **It cannot identify which programme
+originally downloaded those cache entries**, so other local tools may need to
+re-download them. It never deletes the shared catalogue, sidecar manifests,
+another dataset, untracked exports or any files on HF.
+
+Both modes default to dry run and require typing `DELETE LOCAL CACHE` before
+deletion. Stop all inspection/upload processes first. An `hf_xet` shared chunk
+cache is separately managed by Hugging Face and is not erased by this tool.
