@@ -36,11 +36,16 @@ cannot overwrite or orphan data. The dataset must be private and accessible
 to your configured HF token.
 
 
-## Optional deduplication for mixed old and new ZIPs
+## Verified deduplication for mixed old and new ZIPs
 
-**Default behaviour is unchanged:** two local ZIPs targeting the same book
-still block the entire upload. Use the new \`--dedupe-local\` flag explicitly
-only when combining older individual ZIPs with a new Novel Retriever export.
+**Windows default:** `01_bulk_upload.cmd` always enables `--dedupe-local`.
+Verified-equivalent local ZIPs are skipped, and conflicting editions block the
+entire batch. This applies to ordinary uploads as well as mixed old/new exports.
+The uploader never deletes your local ZIPs.
+
+**Advanced Python CLI:** direct invocation without `--dedupe-local` still
+rejects duplicate local ZIPs. Pass the flag explicitly to use the same verified
+preflight as the Windows launcher.
 
 1. Keep a safe copy of the original ZIPs; no local files are deleted.
 2. Extract the outer Retriever export ZIP. Put the individual novel ZIPs,
@@ -51,9 +56,8 @@ only when combining older individual ZIPs with a new Novel Retriever export.
 python -m taiyou_storage.upload novels --dedupe-local
 ~~~
 
-4. On Windows, option **12** in 00_storage_menu.cmd runs this same
-   duplicate-aware interactive preflight. Option **1** retains its original
-   strict behaviour.
+4. On Windows, menu option **1** or `01_bulk_upload.cmd` performs
+   this verified duplicate preflight. There is no separate second launcher.
 5. The preview shows selected novels, skipped **DUPLICATE** packages and
    any **CONFLICT** entries. A conflict blocks all cloud writes, even if
    \`--apply\` was supplied. Conflicting editions require manual review.
