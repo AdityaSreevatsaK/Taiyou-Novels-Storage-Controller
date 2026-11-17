@@ -465,12 +465,48 @@ def scan(backend: HFReadOnly, mode: str = "quick", cache_root: Path | None = Non
             tmp.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
             tmp.replace(cached)
         return value
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = [executor.submit(work, item) for item in books]
+    interrupted = False
+    executor = ThreadPoolExecutor(max_workers=workers)
+    futures = {executor.submit(work, item): item for item in books}
+    visited = set()
+    try:
         for future in as_completed(futures):
             row, issues = future.result()
             results.append(row)
             problems.extend(issues)
+            visited.add(future)
+    except KeyboardInterrupt:
+        interrupted = True
+        for future in futures:
+            if not future.done():
+                future.cancel()
+        for future, item in futures.items():
+            if future in visited:
+                continue
+            if future.done() and not future.cancelled():
+                try:
+                    row, issues = future.result()
+                    results.append(row)
+                    problems.extend(issues)
+                    visited.add(future)
+                except BaseException:
+                    pass
+        for future, item in futures.items():
+            if future in visited:
+                continue
+            meta = item.get("metadata", {}) if isinstance(item, dict) else {}
+            ident = _book_id(item)
+            results.append({"novel_id": ident, "title": str(meta.get("title") or ""),
+                            "author": str(meta.get("author") or ""),
+                            "source_url": str(meta.get("sourceUrl") or ""),
+                            "verification_status": "UNVERIFIED", "cover_status": "UNVERIFIED",
+                            "verification_reason": "Scan interrupted before verification",
+                            "cover_reason": "Scan interrupted"})
+            problems.append(_issue(ident, "SCAN_INTERRUPTED", "MEDIUM",
+                                   "Book not verified at pinned revision",
+                                   "Rerun the scan when connectivity is stable"))
+    finally:
+        executor.shutdown(wait=not interrupted, cancel_futures=interrupted)
     results.sort(key=lambda r: (normalized_title(r.get("title", "")), r.get("novel_id", "")))
     known_dirs = set()
     for item in books:
@@ -496,7 +532,8 @@ def scan(backend: HFReadOnly, mode: str = "quick", cache_root: Path | None = Non
     return {"schema_version": 1, "revision": snapshot.revision, "mode": mode,
             "total_storage_bytes": sum(size for size in snapshot.files.values() if isinstance(size, int)),
             "storage_size_verified": all(isinstance(v, int) for v in snapshot.files.values()),
-            "novels": results, "issues": problems, "duplicate_candidates": duplicates}
+            "novels": results, "issues": problems, "duplicate_candidates": duplicates,
+            "interrupted": interrupted}
 
 
 def compare_retriever(rows: list[dict], registry: dict | None,
