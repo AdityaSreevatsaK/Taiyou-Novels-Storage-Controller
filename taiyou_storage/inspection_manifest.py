@@ -77,8 +77,13 @@ def local_artifact(path: str, local: Path, remote_identity: dict | None = None) 
         "lfs_pointer_blob_sha1": _lfs_pointer_blob_sha1(sha, size),
     }
     if remote_identity:
+        remote_sha = remote_identity.get("sha256")
+        if remote_sha and remote_sha != sha:
+            raise ValueError("HF LFS hash differs from downloaded artifact")
         blob_id = remote_identity.get("blob_id")
         if isinstance(blob_id, str) and GIT_SHA.fullmatch(blob_id):
+            if blob_id not in {result["git_blob_sha1"], result["lfs_pointer_blob_sha1"]}:
+                raise ValueError("HF blob identity differs from downloaded artifact")
             result["hf_blob_id"] = blob_id
     return result
 
