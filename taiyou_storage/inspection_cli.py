@@ -175,7 +175,7 @@ def _render_html(health: dict, result: dict) -> str:
 
 def run(argv: list[str] | None = None, backend: HFReadOnly | None = None) -> int:
     parser = argparse.ArgumentParser(description="Private HF novel inspection: lightweight manifests by default")
-    parser.add_argument("command", choices=("inventory", "covers", "compare", "integrity", "health"))
+    parser.add_argument("command", choices=("inventory", "covers", "compare", "integrity", "health", "checks"))
     parser.add_argument("--repo", default=os.environ.get("HF_DATASET_REPO", DEFAULT_REPO))
     parser.add_argument("--mode", choices=("quick", "manifest", "deep"))
     parser.add_argument("--reports-dir", default="reports")
@@ -198,8 +198,8 @@ def run(argv: list[str] | None = None, backend: HFReadOnly | None = None) -> int
         metrics = {"Total novels": len(novels)}
         title = {"inventory": "Chapter inventory", "covers": "Cover audit",
                  "compare": "Novel Retriever comparison", "integrity": "Library integrity",
-                 "health": "Library health"}[args.command]
-        if args.command == "inventory":
+                 "health": "Library health", "checks": "Private library checks"}[args.command]
+        if args.command in ("inventory", "checks"):
             _csv(directory / "novel-inventory.csv", novels, INVENTORY_COLUMNS)
             _json(directory / "novel-inventory.json",
                   {"schema_version": 1, "revision": result["revision"], "mode": mode, "novels": novels})
@@ -211,8 +211,8 @@ def run(argv: list[str] | None = None, backend: HFReadOnly | None = None) -> int
                 "Unverified chapter coverage": coverage["UNVERIFIED"],
                 "Novels with detected chapter gaps": sum(bool(row.get("missing_chapters")) for row in novels),
             })
-            reports = [directory / "novel-inventory.csv", directory / "novel-inventory.json"]
-        elif args.command == "covers":
+            reports += [directory / "novel-inventory.csv", directory / "novel-inventory.json"]
+        if args.command in ("covers", "checks"):
             all_covers, attention = cover_audit_rows(novels)
             _csv(directory / "cover-audit.csv", all_covers, COVER_COLUMNS)
             _csv(directory / "missing-covers.csv", attention, COVER_COLUMNS)
@@ -223,8 +223,8 @@ def run(argv: list[str] | None = None, backend: HFReadOnly | None = None) -> int
                 "Other cover issues to review": len(attention) - presence["ABSENT"],
                 "Total requiring cover attention": len(attention),
             })
-            reports = [directory / "missing-covers.csv", directory / "cover-audit.csv"]
-        elif args.command == "integrity":
+            reports += [directory / "missing-covers.csv", directory / "cover-audit.csv"]
+        if args.command in ("integrity", "checks"):
             _csv(directory / "integrity-report.csv", issues, ISSUE_COLUMNS)
             _json(directory / "integrity-report.json",
                   {"schema_version": 1, "revision": result["revision"], "mode": mode, "issues": issues})
@@ -235,8 +235,8 @@ def run(argv: list[str] | None = None, backend: HFReadOnly | None = None) -> int
                 "Other findings": len(issues) - severities["HIGH"],
                 "Potential duplicate pairs": len(result["duplicate_candidates"]),
             })
-            reports = [directory / "integrity-report.csv", directory / "integrity-report.json"]
-        elif args.command == "compare":
+            reports += [directory / "integrity-report.csv", directory / "integrity-report.json"]
+        if args.command == "compare":
             registry_path = args.registry
             if registry_path is None and args.retriever_root:
                 registry_path = args.retriever_root / "downloaded_novels.json"
@@ -263,10 +263,10 @@ def run(argv: list[str] | None = None, backend: HFReadOnly | None = None) -> int
                 "Not yet downloaded": states["TO_DOWNLOAD"],
                 "Ambiguous matches": states["AMBIGUOUS"],
             })
-            reports = [directory / "retriever-comparison.csv",
+            reports += [directory / "retriever-comparison.csv",
                        directory / "retriever-comparison.json",
                        directory / "retriever-exclusions.json"]
-        elif args.command == "health":
+        if args.command in ("health", "checks"):
             last_file = directory / "library-health.json"
             try:
                 old = json.loads(last_file.read_text(encoding="utf-8")) if last_file.exists() else None
@@ -284,9 +284,18 @@ def run(argv: list[str] | None = None, backend: HFReadOnly | None = None) -> int
                 "Missing standalone cover files": presence["ABSENT"],
                 "Unverified chapter coverage": health["metrics"]["unknown_chapter_coverage"],
             })
-            reports = [directory / "library-health.html",
+            reports += [directory / "library-health.html",
                        directory / "library-health.csv",
                        directory / "library-health.json"]
+        if args.command == "checks":
+            # The combined check runs one immutable-revision scan and writes
+            # the same detailed reports as the local individual utilities.
+            # These counts are suitable for a public Actions job summary.
+            metrics["Potential duplicate pairs"] = len(result["duplicate_candidates"])
+            metrics["Integrity findings"] = len(issues)
+            metrics["Missing standalone cover files"] = sum(
+                row.get("standalone_cover_status") == "ABSENT" for row in novels)
+            metrics["Covers requiring attention"] = len(attention)
         metrics["Inspection mode"] = mode
         if result.get("interrupted"):
             metrics["Scan interrupted"] = "Yes; results may be incomplete"
