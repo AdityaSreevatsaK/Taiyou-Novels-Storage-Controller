@@ -506,7 +506,7 @@ def scan(backend: HFReadOnly, mode: str = "quick", cache_root: Path | None = Non
                                    "Book not verified at pinned revision",
                                    "Rerun the scan when connectivity is stable"))
     finally:
-        executor.shutdown(wait=not interrupted, cancel_futures=interrupted)
+        executor.shutdown(wait=True, cancel_futures=interrupted)
     results.sort(key=lambda r: (normalized_title(r.get("title", "")), r.get("novel_id", "")))
     known_dirs = set()
     for item in books:
