@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+import csv
 import json
 from pathlib import Path
 import subprocess
@@ -17,7 +18,7 @@ from taiyou_storage.inspection import (
     HFReadOnly, Snapshot, canonical_url, chapter_positions, compare_retriever,
     duplicate_candidates, embedded_cover, inspect_archive, scan, valid_image,
 )
-from taiyou_storage.inspection_cli import health_report, run
+from taiyou_storage.inspection_cli import cover_audit_rows, health_report, run
 
 IDENT = "a" * 24
 SECOND = "b" * 24
@@ -332,6 +333,44 @@ class InspectionTests(unittest.TestCase):
             self.assertEqual(run(["health", "--reports-dir", str(reports)], backend), 0)
             second = json.loads((reports / "library-health.json").read_text())
             self.assertEqual(second["changes_since_previous_scan"]["total_novels"], 0)
+
+    def test_missing_cover_csv_is_actionable_not_all_unverified(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            novels = [book(IDENT, cover=True),
+                      book(SECOND, title="No Standalone", cover=False)]
+            backend = FixtureBackend(Path(tmp) / "dataset", novels).populate()
+            backend.calls.clear()
+            result = scan(backend, "manifest")
+            complete, missing = cover_audit_rows(result["novels"])
+            self.assertEqual(len(complete), 2)
+            self.assertEqual(len(missing), 1)
+            self.assertEqual(missing[0]["title"], "No Standalone")
+            self.assertEqual(missing[0]["standalone_cover"], "ABSENT")
+            present = next(r for r in complete if r["title"] == "Synthetic Book")
+            self.assertEqual(present["standalone_cover"], "PRESENT")
+            self.assertEqual(present["cover_validation"], "UNVERIFIED")
+            reports = Path(tmp) / "reports"
+            self.assertEqual(run(["covers", "--reports-dir", str(reports)], backend), 0)
+            with (reports / "missing-covers.csv").open(encoding="utf-8-sig", newline="") as stream:
+                missing_records = list(csv.DictReader(stream))
+            with (reports / "cover-audit.csv").open(encoding="utf-8-sig", newline="") as stream:
+                all_records = list(csv.DictReader(stream))
+            self.assertEqual(len(missing_records), 1)
+            self.assertEqual(len(all_records), 2)
+            self.assertIn("recommended_action", missing_records[0])
+            self.assertNotIn("source.epub", backend.calls)
+            self.assertNotIn("original.zip", backend.calls)
+
+    def test_corrupt_standalone_cover_is_actionable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            backend = FixtureBackend(tmp).populate()
+            backend.add(f"data/novels/{IDENT}/cover.png", b"invalid-image")
+            result = scan(backend, "deep")
+            all_rows, attention = cover_audit_rows(result["novels"])
+            self.assertEqual(len(all_rows), 1)
+            self.assertEqual(len(attention), 1)
+            self.assertEqual(attention[0]["cover_validation"], "BROKEN")
+            self.assertIn("Replace", attention[0]["recommended_action"])
 
     def test_public_dataset_refused(self):
         from types import SimpleNamespace
