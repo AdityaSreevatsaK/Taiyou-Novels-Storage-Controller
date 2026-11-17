@@ -149,9 +149,10 @@ class CoverBatchTests(unittest.TestCase):
                 sources = [op.path_or_fileobj for op in kwargs["operations"]]
                 self.assertEqual(len(sources), 4)
                 for source in sources:
-                    self.assertIsInstance(source, Path)
-                    self.assertTrue(source.is_file(), "Staged file must survive through HF commit")
-                paths_seen.extend(sources)
+                    self.assertIsInstance(source, (str, Path))
+                    self.assertTrue(Path(source).is_file(),
+                                    "Staged file must survive through HF commit")
+                paths_seen.extend(Path(source) for source in sources)
                 return original(**kwargs)
 
             hub.create_commit = xet_compatible_commit
@@ -174,9 +175,9 @@ class CoverBatchTests(unittest.TestCase):
 
             def failing_commit(**kwargs):
                 sources = [op.path_or_fileobj for op in kwargs["operations"]]
-                self.assertTrue(all(isinstance(path, Path) and path.is_file()
-                                    for path in sources))
-                paths_seen.extend(sources)
+                self.assertTrue(all(isinstance(path, (str, Path))
+                                    and Path(path).is_file() for path in sources))
+                paths_seen.extend(Path(path) for path in sources)
                 raise OSError("Synthetic temporary commit failure")
 
             hub.create_commit = failing_commit
