@@ -532,7 +532,7 @@ def scan(backend: HFReadOnly, mode: str = "manifest", cache_root: Path | None = 
                                 "Repair the catalogue record")])
         cached = None
         if cache_root is not None and mode == "deep":
-            fingerprint = hashlib.sha256(("inspection-v2|" + snapshot.revision + "|" + ident + "|" +
+            fingerprint = hashlib.sha256(("inspection-v3-cover-listing|" + snapshot.revision + "|" + ident + "|" +
                                            json.dumps(item, sort_keys=True, ensure_ascii=False)).encode()).hexdigest()
             cached = cache_root / snapshot.revision / (fingerprint + ".json")
             if cached.exists():
