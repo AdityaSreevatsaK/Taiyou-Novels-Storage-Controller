@@ -80,7 +80,7 @@ def chapter_positions(records: object, archive_names: set[str] | None = None,
             invalid += 1
             continue
         number = next((entry[k] for k in POSITION_KEYS if k in entry), None)
-        if isinstance(number, bool) or not isinstance(number, int) or number < 1:
+        if isinstance(number, bool) or not isinstance(number, int) or not 1 <= number <= 100_000:
             invalid += 1
             continue
         positions.append(number)
@@ -90,7 +90,11 @@ def chapter_positions(records: object, archive_names: set[str] | None = None,
         if not isinstance(filename, str) or not filename.strip():
             absent += 1
         else:
-            filename = filename.replace("\\", "/").lstrip("./")
+            filename = filename.replace("\\", "/")
+            if filename.startswith("/") or ".." in PurePosixPath(filename).parts:
+                absent += 1
+                continue
+            filename = filename.lstrip("./")
             matches = ([filename] if filename in archive_names
                        else by_basename.get(PurePosixPath(filename).name.casefold(), []))
             if len(matches) == 1:
@@ -341,11 +345,13 @@ def inspect_book(book: dict, files: dict, revision: str, backend: HFReadOnly,
         return row, issues
     if archive not in files:
         row["verification_reason"] = "Original archive missing; chapter range unknown"
+    epub_valid = False
     if epub in files:
         try:
             epub_path = backend.download(epub, revision)
             validate_epub(epub_path)
             row["epub_sha256"] = sha256_file(epub_path)
+            epub_valid = True
         except Exception as exc:
             issues.append(_issue(ident, "CORRUPT_EPUB", "HIGH", type(exc).__name__ + ": " + str(exc),
                                  "Restore or regenerate EPUB from verified source"))
@@ -368,6 +374,9 @@ def inspect_book(book: dict, files: dict, revision: str, backend: HFReadOnly,
             reported = meta.get("chapterCount")
             if isinstance(reported, int) and reported > 0 and details.get("manifest_entries") is not None:
                 if reported != details["manifest_entries"]:
+                    if row["verification_status"] == "VERIFIED_COMPLETE":
+                        row["verification_status"] = "UNVERIFIED"
+                        row["verification_reason"] = "Explicit completion conflicts with catalogue chapter count"
                     issues.append(_issue(ident, "CHAPTER_COUNT_MISMATCH", "MEDIUM",
                                          f"Catalogue={reported}, manifest={details['manifest_entries']}",
                                          "Verify the download and reconcile catalogue metadata"))
@@ -376,6 +385,9 @@ def inspect_book(book: dict, files: dict, revision: str, backend: HFReadOnly,
             issues.append(_issue(ident, "CORRUPT_OR_UNREADABLE_ARCHIVE", "HIGH",
                                  type(exc).__name__ + ": " + str(exc),
                                  "Retry or restore the original archive"))
+    if not epub_valid and row["verification_status"] == "VERIFIED_COMPLETE":
+        row["verification_status"] = "UNVERIFIED"
+        row["verification_reason"] = "EPUB not validated; source archive alone cannot prove reader completeness"
     return row, issues
 
 
