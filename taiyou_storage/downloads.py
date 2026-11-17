@@ -8,6 +8,9 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import os
+import time
+
+import httpx
 from pathlib import Path, PurePosixPath
 import tempfile
 from typing import Callable
@@ -30,6 +33,30 @@ def _safe_destination(root: Path, relative: str) -> Path:
     return destination
 
 
+def _download_with_retry(downloader: Callable, *, repo: str,
+                         revision: str, relative: str, sleeper=time.sleep) -> Path:
+    """Retry transient HTTP/network failures only; never retry authentication.
+
+    The maximum two retries have bounded back-off. HF's own internal retry
+    policy can still apply; callers must not loop indefinitely on rate limits.
+    """
+    for attempt in range(3):
+        try:
+            return Path(downloader(
+                repo_id=repo, repo_type="dataset",
+                filename=relative, revision=revision))
+        except Exception as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            temporary = (status in (408, 429, 500, 502, 503, 504)
+                         or isinstance(exc, (TimeoutError, ConnectionError,
+                                             httpx.TimeoutException, httpx.NetworkError)))
+            if not temporary or attempt == 2:
+                raise
+            # No more than 3s additional delay per file, independent of count.
+            sleeper(2 ** attempt)
+    raise AssertionError("Unreachable")
+
+
 def _fetch_one(record: dict, repo: str, revision: str, root: Path,
                downloader: Callable) -> dict:
     relative = record["archive_path"]
@@ -43,9 +70,8 @@ def _fetch_one(record: dict, repo: str, revision: str, root: Path,
     size = 0
     try:
         with os.fdopen(handle, "wb") as writer:
-            source = Path(downloader(
-                repo_id=repo, repo_type="dataset",
-                filename=relative, revision=revision))
+            source = _download_with_retry(downloader, repo=repo,
+                                          revision=revision, relative=relative)
             with source.open("rb") as reader:
                 while True:
                     chunk = reader.read(1024 * 1024)
