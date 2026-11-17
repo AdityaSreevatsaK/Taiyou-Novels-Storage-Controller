@@ -21,6 +21,7 @@ import zipfile
 from .core import DEFAULT_REPO, StorageError, normalized_title, sha256_file
 from .paths import book_dir, validate_book_paths
 from .inspection_manifest import manifest_path, read_manifest, MAX_SIDECAR_BYTES
+from .inspection_cache import ensure_owned_cache
 from .upload import validate_zip_budget
 
 MAX_IMAGE = 12 * 1024 * 1024
@@ -248,8 +249,10 @@ class Snapshot:
 
 class HFReadOnly:
     """The sole network boundary. Inject a fixture implementation for tests."""
-    def __init__(self, repo: str = DEFAULT_REPO, token: str | None = None):
+    def __init__(self, repo: str = DEFAULT_REPO, token: str | None = None,
+                 cache_dir: Path | None = None):
         self.repo, self.token = repo, token
+        self.cache_dir = Path(cache_dir) if cache_dir is not None else None
 
     def snapshot(self) -> Snapshot:
         from huggingface_hub import HfApi
@@ -283,8 +286,10 @@ class HFReadOnly:
 
     def download(self, name: str, revision: str) -> Path:
         from huggingface_hub import hf_hub_download
+        cache = ensure_owned_cache(self.cache_dir, self.repo) if self.cache_dir is not None else None
         return Path(hf_hub_download(repo_id=self.repo, repo_type="dataset",
-                                    filename=name, revision=revision, token=self.token))
+                                    filename=name, revision=revision, token=self.token,
+                                    cache_dir=cache))
 
 
 def _issue(ident: str, kind: str, severity: str, evidence: str, action: str) -> dict:
