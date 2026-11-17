@@ -45,10 +45,10 @@ def epub_bytes(*, cover: bool = False) -> bytes:
     return buffer.getvalue()
 
 
-def archive_bytes(positions=(1, 2, 3), *, complete=False, manifest=True) -> bytes:
+def archive_bytes(positions=(1, 2, 3), *, complete=False, manifest=True, cover=False) -> bytes:
     buffer = BytesIO()
     with zipfile.ZipFile(buffer, "w") as z:
-        z.writestr("source.epub", epub_bytes())
+        z.writestr("source.epub", epub_bytes(cover=cover))
         if manifest:
             chapters = [{"position": number, "file": f"chapter_{number}.txt"}
                         for number in positions]
@@ -88,7 +88,7 @@ class FixtureBackend:
     def populate(self, *, positions=(1, 2, 3), cover=True, complete=False, manifest=True):
         prefix = f"data/novels/{IDENT}"
         self.add(prefix + "/source.epub", epub_bytes(cover=cover))
-        self.add(prefix + "/original.zip", archive_bytes(positions, complete=complete, manifest=manifest))
+        self.add(prefix + "/original.zip", archive_bytes(positions, complete=complete, manifest=manifest, cover=cover))
         if cover:
             self.add(prefix + "/cover.png", image_bytes())
         return self
@@ -149,6 +149,7 @@ class ChapterTests(unittest.TestCase):
 class CoverTests(unittest.TestCase):
     def test_real_and_broken_images(self):
         self.assertTrue(valid_image(image_bytes(), ".png"))
+        self.assertFalse(valid_image(image_bytes(), ".jpg"))
         self.assertFalse(valid_image(b"broken", ".png"))
         self.assertFalse(valid_image(image_bytes()[:70], ".png"))
 
@@ -171,6 +172,14 @@ class InspectionTests(unittest.TestCase):
             self.assertEqual(row["cover_status"], "AVAILABLE")
             self.assertEqual(row["chapter_ranges"], ["1-3"])
             self.assertEqual(row["stored_chapter_count"], 3)
+
+    def test_valid_but_wrong_epub_is_detected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            backend = FixtureBackend(tmp).populate(complete=True, cover=True)
+            backend.add(f"data/novels/{IDENT}/source.epub", epub_bytes(cover=False))
+            report = scan(backend, "deep")
+            self.assertIn("EPUB_ARCHIVE_MISMATCH", {i["code"] for i in report["issues"]})
+            self.assertEqual(report["novels"][0]["verification_status"], "UNVERIFIED")
 
     def test_deep_incomplete_and_corrupt_cover(self):
         with tempfile.TemporaryDirectory() as tmp:
