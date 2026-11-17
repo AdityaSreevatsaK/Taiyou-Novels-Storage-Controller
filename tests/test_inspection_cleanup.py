@@ -96,7 +96,7 @@ class CleanupTests(unittest.TestCase):
                          Path("reports") / ".inspection-download-cache")
 
     def test_windows_cleanup_launcher(self):
-        script = Path(__file__).resolve().parents[1] / "18_cleanup_inspection_downloads.cmd"
+        script = Path(__file__).resolve().parents[1] / "17_cleanup_inspection_downloads.cmd"
         text = script.read_text(encoding="utf-8")
         self.assertIn("taiyou_storage.inspection_cleanup", text)
         self.assertIn("%*", text)
@@ -110,11 +110,11 @@ class CleanupTests(unittest.TestCase):
         self.assertIn('set "result=%errorlevel%"', text)
         self.assertIn("pause", text)
 
-    def test_menu_option_18_calls_interactive_cleanup_launcher(self):
+    def test_menu_option_17_calls_interactive_cleanup_launcher(self):
         menu = (Path(__file__).resolve().parents[1] /
                 "00_storage_menu.cmd").read_text(encoding="utf-8")
         self.assertIn(
-            'if "%choice%"=="18" call "%~dp018_cleanup_inspection_downloads.cmd"',
+            'if "%choice%"=="17" call "%~dp017_cleanup_inspection_downloads.cmd"',
             menu,
         )
 
