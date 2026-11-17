@@ -62,7 +62,7 @@ cannot always be proven from pixels without trustworthy provenance.
 
 retriever-exclusions.json contains SHA-256 fingerprints of canonical source
 URLs only, not titles, IDs or personal metadata. Canonicalisation uses HTTPS,
-lower-case hosts, strips www., query/fragment and trailing slash. The format
+lower-case hosts, strips www., the fragment and trailing slash, and preserves identifying query parameters. The format
 is versioned and suitable for a future **separately reviewed** Retriever
 change to compare hashes locally and avoid duplicate downloads.
 
