@@ -30,16 +30,16 @@ only verify remote file listing or manifest evidence, not image pixels.
 | `03_list_novels.cmd` | Export a local CSV of catalogue entries |
 | `04_detect_conflicts.cmd` | Report exact/normalised duplicate titles |
 | **`05_verify_integrity.cmd`** | Fast remote manifest verification by default; use `--mode deep` for byte-level archive/EPUB inspection |
+| `06_sync_status.cmd` | Compare local EPUB-derived IDs with remote IDs; **not** full byte verification |
+| `07_backup_catalogue.cmd` | Save a local copy of `data/library.json` |
+| **`10_upload_covers.cmd`** | Import covers with preview, confirmation and resumable batches |
+| **`11_clear_hf_data.cmd`** | **Destructive full reset** — verified backup and multiple confirmations required |
 | `12_export_novel_inventory.cmd` | Chapter ranges and missing positions from verified sidecars, CSV and JSON |
 | `13_audit_missing_covers.cmd` | Actionable `missing-covers.csv` plus full `cover-audit.csv`, distinguishing file presence from verified image integrity |
 | `14_compare_retriever_inventory.cmd` | Compare local Retriever registry and produce private exclusion hashes |
 | `15_library_health_report.cmd` | Local HTML dashboard, JSON and CSV |
 | **`16_backfill_inspection_manifests.cmd`** | Preview and safely migrate existing books to tiny inspection manifests; explicit `--interactive` or `--apply` to write |
 | **`17_cleanup_inspection_downloads.cmd`** | Preview and delete local-only inspection download cache; optionally target older shared HF novel files |
-| `06_sync_status.cmd` | Compare local EPUB-derived IDs with remote IDs; **not** full byte verification |
-| `07_backup_catalogue.cmd` | Save a local copy of `data/library.json` |
-| **`10_upload_covers.cmd`** | Import covers with preview, confirmation and resumable batches |
-| **`11_clear_hf_data.cmd`** | **Destructive full reset** — verified backup and multiple confirmations required |
 
 `00_storage_menu.cmd` offers these working tools in a Windows menu. Launchers **08 and 09 are placeholders**; single-novel restoration and single-novel deletion are not implemented here.
 
