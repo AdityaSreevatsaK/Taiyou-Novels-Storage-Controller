@@ -168,3 +168,45 @@ def read_manifest(book: dict, raw: bytes, remote_files: dict[str, int | None],
             not isinstance(item, dict) or item.get("novel_id") != book["id"] for item in findings):
         raise ValueError("Invalid saved issues")
     return {key: results.get(key) for key in ROW_FIELDS}, findings
+
+
+def upload_sidecar(book: dict, archive: Path, epub: bytes) -> bytes:
+    """Generate the same verified sidecar from a newly imported local ZIP.
+
+    Intentionally leaves cover status UNVERIFIED: source ZIP covers are not
+    necessarily the linked, independently validated private-library cover.
+    """
+    from tempfile import TemporaryDirectory
+    from .inspection import inspect_archive, validate_epub
+
+    with TemporaryDirectory(prefix="taiyou-inspection-") as temp_dir:
+        epub_path = Path(temp_dir) / "source.epub"
+        epub_path.write_bytes(epub)
+        validate_epub(epub_path)
+        detail = inspect_archive(archive)
+        digest = sha256_file(epub_path)
+        if detail["embedded_epub_count"] != 1 or detail["embedded_epub_sha256"] != digest:
+            raise ValueError("Local ZIP embedded EPUB differs from source.epub")
+        status = detail["status"]
+        reason = detail.get("reason", "")
+        reported = book["metadata"].get("chapterCount")
+        if (status == "VERIFIED_COMPLETE" and isinstance(reported, int)
+                and reported > 0 and detail.get("manifest_entries") != reported):
+            status = "UNVERIFIED"
+            reason = "Explicit completion conflicts with catalogue chapter count"
+        row = {
+            "stored_chapter_count": detail.get("count"),
+            "chapter_ranges": detail.get("ranges", []),
+            "missing_chapters": detail.get("missing", []),
+            "duplicate_positions": detail.get("duplicates", []),
+            "verification_status": status,
+            "verification_reason": reason,
+            "cover_status": "UNVERIFIED",
+            "cover_reason": "Cover not independently validated by the novel uploader",
+            "epub_sha256": digest,
+        }
+        evidence = {
+            "epub": local_artifact(book["epubPath"], epub_path),
+            "archive": local_artifact(book["archivePath"], archive),
+        }
+        return manifest_bytes(build_manifest(book, row, [], evidence))
