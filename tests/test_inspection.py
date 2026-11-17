@@ -4,6 +4,7 @@ from __future__ import annotations
 from io import BytesIO, StringIO
 import csv
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -379,6 +380,54 @@ class InspectionTests(unittest.TestCase):
             self.assertEqual(len(attention), 1)
             self.assertEqual(attention[0]["cover_validation"], "BROKEN")
             self.assertIn("Replace", attention[0]["recommended_action"])
+
+    def test_combined_checks_write_full_private_reports_with_only_one_scan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            books = [book(IDENT, title="Private Sample"),
+                     book(SECOND, title="Another Private Sample", cover=False)]
+            backend = FixtureBackend(Path(tmp) / "dataset", books).populate()
+            reports = Path(tmp) / "reports"
+            with patch("taiyou_storage.inspection_cli.scan", wraps=scan) as spy, \
+                    patch("sys.stdout", new_callable=StringIO) as output:
+                self.assertEqual(run(["checks", "--reports-dir", str(reports)], backend), 0)
+            self.assertEqual(spy.call_count, 1)
+            self.assertIn("=== Private library checks ===", output.getvalue())
+            self.assertIn("Total novels", output.getvalue())
+            self.assertIn("Missing standalone cover files", output.getvalue())
+            self.assertNotIn("Private Sample", output.getvalue())
+            self.assertTrue((reports / "novel-inventory.csv").exists())
+            self.assertTrue((reports / "cover-audit.csv").exists())
+            self.assertTrue((reports / "missing-covers.csv").exists())
+            self.assertTrue((reports / "integrity-report.csv").exists())
+            self.assertTrue((reports / "library-health.html").exists())
+            self.assertNotIn(f"data/novels/{IDENT}/source.epub", backend.calls)
+
+    def test_github_checks_show_counts_without_leaking_titles_or_reports(self):
+        from taiyou_storage.github_checks import run as github_checks
+        with tempfile.TemporaryDirectory() as tmp:
+            books = [book(IDENT, title="SECRET PRIVATE TITLE")]
+            backend = FixtureBackend(Path(tmp) / "dataset", books).populate()
+            summary = Path(tmp) / "github-summary.md"
+            with patch.dict(os.environ, {"RUNNER_TEMP": tmp,
+                                          "GITHUB_STEP_SUMMARY": str(summary)}), \
+                    patch("sys.stdout", new_callable=StringIO) as output:
+                self.assertEqual(github_checks(["--mode", "manifest"], backend=backend), 0)
+            console = output.getvalue()
+            markdown = summary.read_text(encoding="utf-8")
+            self.assertIn("Total novels: 1", console)
+            self.assertIn("| Total novels | 1 |", markdown)
+            self.assertIn("Standalone covers", console)
+            self.assertNotIn("SECRET PRIVATE TITLE", console + markdown)
+            self.assertNotIn(IDENT, console + markdown)
+            self.assertNotIn("novelfull.com", console + markdown)
+            self.assertFalse(list(Path(tmp).glob("taiyou-private-checks-*")))
+
+    def test_github_checks_fail_closed_without_token(self):
+        from taiyou_storage.github_checks import run as github_checks
+        with patch.dict(os.environ, {"HF_TOKEN": ""}), \
+                patch("sys.stderr", new_callable=StringIO) as err:
+            self.assertEqual(github_checks([]), 2)
+        self.assertIn("token not configured", err.getvalue())
 
     def test_public_dataset_refused(self):
         from types import SimpleNamespace
