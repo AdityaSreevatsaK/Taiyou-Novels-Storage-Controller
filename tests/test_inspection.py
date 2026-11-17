@@ -208,6 +208,50 @@ class InspectionTests(unittest.TestCase):
             self.assertIn("CORRUPT_OR_UNREADABLE_ARCHIVE",
                           {issue["code"] for issue in result["issues"]})
 
+    def test_interrupted_scan_preserves_unverified_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            backend = FixtureBackend(tmp).populate()
+            with patch("taiyou_storage.inspection.as_completed", side_effect=KeyboardInterrupt):
+                result = scan(backend, "deep")
+            self.assertTrue(result["interrupted"])
+            self.assertEqual(len(result["novels"]), 1)
+            self.assertIn("SCAN_INTERRUPTED", {issue["code"] for issue in result["issues"]})
+
+    def test_transient_error_not_cached(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            backend = FixtureBackend(tmp).populate()
+            archive = f"data/novels/{IDENT}/original.zip"
+            cache = Path(tmp) / "cache"
+            backend.fail.add(archive)
+            first = scan(backend, "deep", cache)
+            self.assertEqual(first["novels"][0]["verification_status"], "UNVERIFIED")
+            backend.fail.clear()
+            backend.calls.clear()
+            second = scan(backend, "deep", cache)
+            self.assertIn(archive, backend.calls)
+            self.assertEqual(second["novels"][0]["verification_status"], "VERIFIED_RANGE")
+
+    def test_duplicate_epub_hash_and_ambiguous_author(self):
+        digest = "a" * 64
+        rows = [
+            {"novel_id": IDENT, "title": "First", "author": "A",
+             "source_url": "https://novelfull.com/first.html", "epub_sha256": digest},
+            {"novel_id": SECOND, "title": "Second", "author": "B",
+             "source_url": "https://novelfull.com/second.html", "epub_sha256": digest},
+        ]
+        self.assertEqual(len(duplicate_candidates(rows)), 1)
+        ambiguous = compare_retriever(rows[:1],
+                                      {"novels": [{"url": rows[0]["source_url"], "author": "Other"}]}, [])
+        self.assertEqual(ambiguous["records"][0]["state"], "AMBIGUOUS")
+
+    def test_generated_cover_is_not_counted_as_available(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            novel = book()
+            novel["metadata"]["coverGenerated"] = True
+            backend = FixtureBackend(tmp, [novel]).populate()
+            result = scan(backend, "deep")
+            self.assertEqual(result["novels"][0]["cover_status"], "UNVERIFIED")
+
     def test_revision_invalidates_cache(self):
         with tempfile.TemporaryDirectory() as tmp:
             backend = FixtureBackend(tmp).populate()
