@@ -391,7 +391,7 @@ class InspectionTests(unittest.TestCase):
 class WindowsLauncherTests(unittest.TestCase):
     def test_launchers_reference_local_engine(self):
         root = Path(__file__).resolve().parents[1]
-        for number in ("05", "13", "14", "15", "16"):
+        for number in ("05", "12", "13", "14", "15"):
             files = list(root.glob(number + "_*.cmd"))
             self.assertEqual(len(files), 1)
             content = files[0].read_text(encoding="utf-8").lower()
