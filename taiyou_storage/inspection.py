@@ -18,7 +18,7 @@ from urllib.parse import urlsplit, urlunsplit
 import xml.etree.ElementTree as ET
 import zipfile
 
-from .core import DEFAULT_REPO, StorageError, normalized_title
+from .core import DEFAULT_REPO, StorageError, normalized_title, sha256_file
 from .paths import book_dir, validate_book_paths
 from .upload import validate_zip_budget
 
@@ -129,7 +129,7 @@ def inspect_archive(path: Path) -> dict:
         validate_zip_budget(archive)
         if archive.testzip():
             raise ValueError("Archive CRC validation failed")
-        names = {item.filename for item in archive.infolist() if not item.is_dir()}
+        names = {item.filename for item in archive.infolist() if not item.is_dir() and item.file_size > 0}
         matches = [name for name in names if PurePosixPath(name).name.casefold() == "chapters.json"]
         if len(matches) > 1:
             raise ValueError("Multiple chapters.json manifests")
@@ -274,7 +274,7 @@ def inspect_book(book: dict, files: dict, revision: str, backend: HFReadOnly,
            "duplicate_positions": [], "verification_status": "UNVERIFIED",
            "verification_reason": "Quick scan; chapters not inspected",
            "cover_status": "UNVERIFIED", "cover_reason": "Not checked",
-           "epub_path": epub or "", "archive_path": archive or ""}
+           "epub_path": epub or "", "archive_path": archive or "", "epub_sha256": ""}
     issues = []
     try:
         folder = validate_book_paths(book)
@@ -339,9 +339,13 @@ def inspect_book(book: dict, files: dict, revision: str, backend: HFReadOnly,
                              row["cover_reason"], "Restore an authentic cover and repair its reference"))
     if mode != "deep":
         return row, issues
+    if archive not in files:
+        row["verification_reason"] = "Original archive missing; chapter range unknown"
     if epub in files:
         try:
-            validate_epub(backend.download(epub, revision))
+            epub_path = backend.download(epub, revision)
+            validate_epub(epub_path)
+            row["epub_sha256"] = sha256_file(epub_path)
         except Exception as exc:
             issues.append(_issue(ident, "CORRUPT_EPUB", "HIGH", type(exc).__name__ + ": " + str(exc),
                                  "Restore or regenerate EPUB from verified source"))
@@ -383,6 +387,9 @@ def duplicate_candidates(rows: list[dict]) -> list[dict]:
         source = canonical_url(r["source_url"])
         if source:
             grouped["source:" + source].append(r)
+        digest = r.get("epub_sha256") or ""
+        if re.fullmatch(r"[a-f0-9]{64}", digest):
+            grouped["epub-sha256:" + digest].append(r)
         if title and author:
             grouped["title-author:" + title + "|" + author].append(r)
     matches = []
@@ -439,7 +446,8 @@ def scan(backend: HFReadOnly, mode: str = "quick", cache_root: Path | None = Non
                       "verification_status": "UNVERIFIED", "cover_status": "UNVERIFIED"}, [
                           _issue(ident, "INSPECTION_FAILED", "HIGH", type(exc).__name__,
                                  "Retry the scan; do not assume this book is complete")])
-        if cached is not None:
+        transient = {"INSPECTION_FAILED", "COVER_SCAN_FAILED", "CORRUPT_OR_UNREADABLE_ARCHIVE"}
+        if cached is not None and not any(issue["code"] in transient for issue in value[1]):
             cached.parent.mkdir(parents=True, exist_ok=True)
             tmp = cached.with_suffix(".tmp")
             tmp.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
@@ -458,10 +466,8 @@ def scan(backend: HFReadOnly, mode: str = "quick", cache_root: Path | None = Non
             known_dirs.add(book_dir(item))
         except (TypeError, KeyError, ValueError):
             pass
-    disk_dirs = {str(PurePosixPath(name).parent) for name in snapshot.files
-                 if name.startswith("data/novels/") and
-                 PurePosixPath(name).name in {"source.epub", "original.zip",
-                                             "cover.jpg", "cover.jpeg", "cover.png", "cover.webp"}}
+    disk_dirs = {"/".join(PurePosixPath(name).parts[:3]) for name in snapshot.files
+                 if name.startswith("data/novels/") and len(PurePosixPath(name).parts) >= 4}
     for directory in sorted(disk_dirs - known_dirs):
         problems.append(_issue("", "ORPHAN_NOVEL_DIRECTORY", "HIGH", directory,
                                "Inspect the orphan and reconcile the catalogue without deleting it"))
@@ -484,12 +490,17 @@ def scan(backend: HFReadOnly, mode: str = "quick", cache_root: Path | None = Non
 def compare_retriever(rows: list[dict], registry: dict | None,
                       planned: list[dict] | None) -> dict:
     """Conservative identity matching. Never publish this result to GitHub."""
-    by_url, by_name = defaultdict(set), defaultdict(set)
+    by_url, by_name, by_digest = defaultdict(set), defaultdict(set)
+    identities = {}
     for row in rows:
         ident = row.get("novel_id", "")
         url = canonical_url(row.get("source_url"))
+        identities[ident] = row
         if url:
             by_url[url].add(ident)
+        digest = row.get("epub_sha256") or ""
+        if re.fullmatch(r"[a-f0-9]{64}", digest):
+            by_digest[digest].add(ident)
         title = normalized_title(row.get("title") or "")
         author = normalized_title(row.get("author") or "")
         if title and author:
@@ -497,14 +508,29 @@ def compare_retriever(rows: list[dict], registry: dict | None,
     def match(item):
         url = canonical_url(item.get("url") or item.get("source_url") or item.get("sourceUrl"))
         ids = by_url.get(url, set()) if url else set()
+        digest = str(item.get("epub_sha256") or "")
+        if re.fullmatch(r"[a-f0-9]{64}", digest) and by_digest.get(digest):
+            matched = by_digest[digest]
+            if len(matched) == 1:
+                return "ALREADY_IN_HF", sorted(matched), "identical EPUB SHA-256"
+            return "AMBIGUOUS", sorted(matched), "multiple identical EPUB content records"
         if len(ids) == 1:
-            return "ALREADY_IN_HF", list(ids), "source URL"
+            existing = identities[next(iter(ids))]
+            author = normalized_title(str(item.get("author") or ""))
+            stored_author = normalized_title(existing.get("author") or "")
+            if author and stored_author and author != stored_author:
+                return "AMBIGUOUS", sorted(ids), "source URL matches but author differs"
+            return "ALREADY_IN_HF", sorted(ids), "source URL"
         if len(ids) > 1:
             return "AMBIGUOUS", sorted(ids), "multiple matching source URLs"
         title = normalized_title(str(item.get("title") or ""))
         author = normalized_title(str(item.get("author") or ""))
         if title and author and len(by_name.get((title, author), set())) == 1:
-            return "ALREADY_IN_HF", sorted(by_name[(title, author)]), "title and author"
+            candidates = sorted(by_name[(title, author)])
+            if url and any(canonical_url(identities[ident].get("source_url")) not in ("", url)
+                           for ident in candidates):
+                return "AMBIGUOUS", candidates, "same title and author but different source URLs"
+            return "ALREADY_IN_HF", candidates, "title and author"
         if title and author and len(by_name.get((title, author), set())) > 1:
             return "AMBIGUOUS", sorted(by_name[(title, author)]), "multiple title/author matches"
         if title and not author and any(t == title for t, _ in by_name):
