@@ -1,4 +1,5 @@
 @echo off
-echo Integrity verifier is planned, not implemented.
-pause
-exit /b 1
+setlocal
+cd /d "%~dp0"
+py -m taiyou_storage.inspection_cli integrity %*
+exit /b %errorlevel%
