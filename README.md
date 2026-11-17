@@ -50,6 +50,11 @@ Passing `--help` to an inspection command exits without pausing, for automation.
 
 ## Inspection downloads and local cleanup
 
+**Double-click `18_cleanup_inspection_downloads.cmd` or choose menu option 18:**
+The script scans recent inspection downloads **and** earlier cached HF novel files,
+shows what is eligible for deletion, and requires you to type
+`DELETE LOCAL CACHE` before deleting anything. It never deletes files from HF.
+
 Routine inventory, cover, integrity and health checks now default to small verified manifest files.
 Full `--mode deep` checks and one-time backfills download novel content to
 `reports/.inspection-download-cache/`, a **dedicated local** Hugging Face cache.

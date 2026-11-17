@@ -100,6 +100,23 @@ class CleanupTests(unittest.TestCase):
         text = script.read_text(encoding="utf-8")
         self.assertIn("taiyou_storage.inspection_cleanup", text)
         self.assertIn("%*", text)
+        # Double-click (without arguments) must no longer silently preview.
+        # Python still shows the planned deletion and demands typed consent.
+        self.assertIn('if "%~1"=="" (', text)
+        self.assertIn(
+            "py -m taiyou_storage.inspection_cleanup --legacy-shared-cache --apply", text
+        )
+        self.assertIn("py -m taiyou_storage.inspection_cleanup %*", text)
+        self.assertIn('set "result=%errorlevel%"', text)
+        self.assertIn("pause", text)
+
+    def test_menu_option_18_calls_interactive_cleanup_launcher(self):
+        menu = (Path(__file__).resolve().parents[1] /
+                "00_storage_menu.cmd").read_text(encoding="utf-8")
+        self.assertIn(
+            'if "%choice%"=="18" call "%~dp018_cleanup_inspection_downloads.cmd"',
+            menu,
+        )
 
 
 if __name__ == "__main__":
