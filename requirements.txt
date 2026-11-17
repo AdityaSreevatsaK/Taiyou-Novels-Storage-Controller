@@ -1,3 +1,6 @@
 # Exact tested resolutions live in constraints.txt; relax intentionally after CI verification.
 -c constraints.txt
 huggingface_hub>=0.24,<2
+
+# Strict image decoding in read-only cover audits
+Pillow>=11,<12
