@@ -20,7 +20,7 @@ INVENTORY_COLUMNS = ["novel_id", "title", "author", "source_url",
 COVER_COLUMNS = ["novel_id", "title", "source_url", "cover_status", "cover_reason"]
 ISSUE_COLUMNS = ["novel_id", "code", "severity", "evidence", "recommended_action"]
 COMPARE_COLUMNS = ["title", "author", "source_url", "state", "hf_ids",
-                   "reason", "download_recorded"]
+                   "reason", "download_recorded", "download_ranges"]
 HEALTH_COLUMNS = ["metric", "value"]
 
 
