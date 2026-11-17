@@ -15,7 +15,7 @@ from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
 
-from .inspection_cli import run as inspection_run
+from .inspection_cli import cover_audit_rows, run as inspection_run
 
 
 def _counts(report_dir: Path) -> dict[str, int]:
@@ -37,6 +37,7 @@ def _counts(report_dir: Path) -> dict[str, int]:
         "Standalone covers absent": covers["ABSENT"],
         "Other cover listing concerns": sum(covers[k] for k in (
             "BROKEN_REFERENCE", "POSSIBLE_PLACEHOLDER", "MULTIPLE_FILES", "UNKNOWN")),
+        "Covers requiring attention": len(cover_audit_rows(novels)[1]),
         "Potential duplicate pairs": int(metrics.get("duplicate_candidates", 0)),
         "Integrity findings": len(issues),
         "High-severity findings": severity["HIGH"],
