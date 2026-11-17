@@ -1,9 +1,13 @@
 """Offline tests for private Hugging Face reset safety."""
 import unittest
 from unittest.mock import patch
+from tempfile import TemporaryDirectory
+from pathlib import Path
+from io import StringIO
+import contextlib
 
 from taiyou_storage.reset import (
-    EMPTY_CATALOGUE, ResetError, operations_for, perform_reset,
+    EMPTY_CATALOGUE, ResetError, operations_for, perform_reset, run,
     select_data_files,
 )
 
@@ -75,6 +79,58 @@ class ResetTests(unittest.TestCase):
         api = FakeAPI(private=False)
         with self.assertRaisesRegex(ResetError, "PRIVATE"):
             perform_reset(api, "owner/repo", "token", api.revision, sorted(api.paths))
+        self.assertFalse(api.commits)
+
+    def test_reset_preview_does_not_download_or_modify_remote_data(self):
+        api = FakeAPI()
+        with patch("huggingface_hub.HfApi", return_value=api), \
+             patch("huggingface_hub.get_token", return_value="fake-token"), \
+             patch("taiyou_storage.reset.backup_data") as backup, \
+             contextlib.redirect_stdout(StringIO()):
+            self.assertEqual(run([]), 0)
+        backup.assert_not_called()
+        self.assertFalse(api.commits)
+
+    def test_reset_rejects_noninteractive_mode_before_backup(self):
+        api = FakeAPI()
+        with patch("huggingface_hub.HfApi", return_value=api), \
+             patch("huggingface_hub.get_token", return_value="fake-token"), \
+             patch("taiyou_storage.reset.backup_data") as backup, \
+             patch("sys.stdin.isatty", return_value=False), \
+             contextlib.redirect_stderr(StringIO()), \
+             contextlib.redirect_stdout(StringIO()):
+            self.assertEqual(run(["--apply"]), 1)
+        backup.assert_not_called()
+        self.assertFalse(api.commits)
+
+    def test_wrong_dataset_confirmation_cannot_start_backup(self):
+        api = FakeAPI()
+        with patch("huggingface_hub.HfApi", return_value=api), \
+             patch("huggingface_hub.get_token", return_value="fake-token"), \
+             patch("sys.stdin.isatty", return_value=True), \
+             patch("builtins.input", return_value="WRONG DATASET"), \
+             patch("taiyou_storage.reset.backup_data") as backup, \
+             contextlib.redirect_stdout(StringIO()):
+            self.assertEqual(run(["--apply"]), 2)
+        backup.assert_not_called()
+        self.assertFalse(api.commits)
+
+    def test_wrong_final_phrase_preserves_verified_local_backup(self):
+        api = FakeAPI()
+        with TemporaryDirectory() as folder:
+            source = Path(folder) / "backup"
+            source.mkdir()
+            with patch("huggingface_hub.HfApi", return_value=api), \
+                 patch("huggingface_hub.get_token", return_value="fake-token"), \
+                 patch("sys.stdin.isatty", return_value=True), \
+                 patch("builtins.input", side_effect=[
+                     "AdityaSreevatsaK/Taiyous-Novels", "NO, DO NOT ERASE"]), \
+                 patch("taiyou_storage.reset.backup_data",
+                       return_value=(source, {"count": len(api.paths),
+                                              "files": [{"path": "synthetic"}]})), \
+                 contextlib.redirect_stdout(StringIO()):
+                self.assertEqual(run(["--apply"]), 2)
+            self.assertTrue(source.exists())
         self.assertFalse(api.commits)
 
     def test_commit_revision_guarded(self):

@@ -98,6 +98,32 @@ The legacy option can also remove cache entries used by another local programme.
 No Hugging Face remote data, novel exports, catalogue or Library data is deleted.
 Never run cleanup while an inspection, upload or migration is active.
 
+## Reliable ZIP download exports
+
+`02_download_all.cmd` downloads only the existing `original.zip` files
+referenced by the private catalogue. The Python command works on Windows,
+Linux and macOS:
+
+```sh
+python -m taiyou_storage.cli download --destination downloads --workers 3
+```
+
+Downloads stream in bounded, parallel transfers (1 to 4 workers). Transient
+timeouts, HTTP 429 and selected server errors get at most two bounded retries;
+authentication failures are not retried. Each ZIP is written into a unique
+temporary file and atomically renamed after transfer.
+Failed transfers never replace a previous complete ZIP. The console now
+summarises downloaded, missing and failed files. See
+`downloads/download-report.csv` for individual errors, and
+`downloads/manifest.json` for SHA-256 hashes and `complete: true/false`.
+A missing or failed ZIP produces a nonzero exit code; successful ZIPs are
+preserved for retry. The script does not fetch the entire HF dataset or modify
+any remote files.
+
+**Privacy:** Keep exports under `downloads/` (ignored by Git), or outside the
+public code checkout. If you select another destination inside the checkout,
+do not commit private CSV/JSON reports.
+
 ## Import novel ZIPs
 
 Each ZIP must contain exactly one valid **`source.epub`**. Optional `metadata.json`, `chapters.json` and chapter text files may sit alongside it or in a subfolder (such as `chapters/source.epub`).
@@ -193,6 +219,6 @@ Refer to [Actions setup and security](docs/GITHUB_ACTIONS.md) for secrets and pe
 py -m unittest discover -s tests -v
 ```
 
-CI tests on **Windows and Linux, Python 3.11 and 3.12**. The verified integration suite covers idempotent uploads, corrupted EPUB repair, personal metadata, interrupted cover-batch resume and safe reset previews. **Live Hugging Face write integration is not part of CI.**
+CI tests on **Windows and Linux, Python 3.11 and 3.12**, and runs a dependency vulnerability audit on pushes and PRs (also weekly). The verified integration suite covers idempotent uploads, corrupted EPUB repair, personal metadata, interrupted cover-batch resume and safe reset previews. **Live Hugging Face write integration is not part of CI.**
 
 Dependencies use tested versions in [`constraints.txt`](constraints.txt). See the [changelog](CHANGELOG.md) and [release procedure](docs/RELEASING.md). Code is MIT-licensed; novel texts and cover artwork are not.

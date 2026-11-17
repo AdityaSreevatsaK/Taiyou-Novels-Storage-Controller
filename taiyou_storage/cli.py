@@ -22,6 +22,8 @@ def run(argv=None) -> int:
     sub.add_parser("backup", help="Save a dated copy of the catalogue")
     download = sub.add_parser("download", help="Download all remote original.zip archives")
     download.add_argument("--destination", default="downloads")
+    download.add_argument("--workers", type=int, choices=range(1, 5), default=3,
+                          metavar="1..4", help="Bound concurrent ZIP downloads (default 3)")
     sync = sub.add_parser("status", help="Compare local EPUB hash IDs to remote catalogue IDs")
     sync.add_argument("--folder", default="novels")
     for command_parser in sub.choices.values():
@@ -62,42 +64,49 @@ def run(argv=None) -> int:
             title = "Catalogue backup"
         elif args.command == "download":
             from huggingface_hub import HfApi, hf_hub_download
+            from .downloads import download_archives
             api = HfApi()
-            available = set(api.list_repo_files(repo_id=args.repo, repo_type="dataset", revision=revision))
-            manifest = []
-            download_rows = []
-            for b in rows(books):
-                path = b["archive_path"]
-                if not path or path not in available:
-                    download_rows.append({"id": b["id"], "title": b["title"],
-                                          "state": "MISSING", "path": path or ""})
-                    if args.verbose:
-                        print(f"[MISSING] {b['title']}: no original ZIP")
-                    continue
-                destination = Path(args.destination) / path
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                remote_file = hf_hub_download(repo_id=args.repo, repo_type="dataset",
-                                              filename=path, revision=revision)
-                # Write via a temporary file to avoid leaving a partial archive.
-                tmp = destination.with_suffix(destination.suffix + ".part")
-                tmp.write_bytes(Path(remote_file).read_bytes())
-                tmp.replace(destination)
-                digest = sha256_file(destination)
-                manifest.append({"id": b["id"], "title": b["title"], "path": path, "sha256": digest})
-                download_rows.append({"id": b["id"], "title": b["title"],
-                                      "state": "DOWNLOADED", "path": path})
-                if args.verbose:
-                    print(f"[DOWNLOADED] {b['title']}")
-            manifest_path = Path(args.destination) / "manifest.json"
-            manifest_path.parent.mkdir(parents=True, exist_ok=True)
-            manifest_path.write_text(json.dumps({"repo": args.repo, "revision": revision,
-                "files": manifest}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-            report_path = Path(args.destination) / "download-report.csv"
-            write_csv(report_path, download_rows, ["id", "title", "state", "path"])
-            metrics["Archives downloaded"] = len(manifest)
-            metrics["Archives missing"] = sum(x["state"] == "MISSING" for x in download_rows)
+            available = set(api.list_repo_files(
+                repo_id=args.repo, repo_type="dataset", revision=revision))
+            inventory = rows(books)
+            manifest, download_rows = download_archives(
+                inventory, available, repo=args.repo, revision=revision,
+                root=Path(args.destination), downloader=hf_hub_download,
+                workers=args.workers)
+            if args.verbose:
+                for row in download_rows:
+                    print(f"[{row['state']}] {row['title']}: {row['details']}")
+            failures = sum(row["state"] == "FAILED" for row in download_rows)
+            missing = sum(row["state"] == "MISSING" for row in download_rows)
+            root = Path(args.destination)
+            root.mkdir(parents=True, exist_ok=True)
+            # A partial run is clearly marked, never advertised as a complete
+            # export. Already downloaded ZIP files remain available for retry.
+            summary = {"repo": args.repo, "revision": revision,
+                       "complete": not (failures or missing),
+                       "expected_novels": len(inventory),
+                       "missing": missing, "failed": failures, "files": manifest}
+            manifest_path = root / "manifest.json"
+            staged = root / ".manifest.json.part"
+            try:
+                staged.write_text(json.dumps(summary, ensure_ascii=False,
+                                             indent=2) + "\n", encoding="utf-8")
+                staged.replace(manifest_path)
+            finally:
+                staged.unlink(missing_ok=True)
+            report_path = root / "download-report.csv"
+            write_csv(report_path, download_rows,
+                      ["id", "title", "state", "path", "details"])
+            metrics.update({
+                "Archives downloaded": len(manifest),
+                "Archives missing": missing,
+                "Failed downloads": failures,
+                "Complete export": "Yes" if not (failures or missing) else "No",
+            })
             reports = [manifest_path, report_path]
             title = "Novel ZIP download"
+            note = ("Any missing or failed archive makes this an incomplete export. "
+                    "Successful ZIPs are retained for retry.")
         elif args.command == "status":
             folder = Path(args.folder)
             if not folder.is_dir():
@@ -129,6 +138,8 @@ def run(argv=None) -> int:
             title = "Local sync status"
             note = "ID matches do not prove ZIP content equality."
         print_summary(title, metrics, reports=reports, note=note)
+        if args.command == "download" and (failures or missing):
+            return 2
         return 0
     except (StorageError, ValueError, OSError, RuntimeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

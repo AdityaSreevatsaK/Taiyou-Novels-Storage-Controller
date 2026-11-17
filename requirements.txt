@@ -3,4 +3,4 @@
 huggingface_hub>=0.24,<2
 
 # Strict image decoding in read-only cover audits
-Pillow>=11,<12
+Pillow>=13,<14

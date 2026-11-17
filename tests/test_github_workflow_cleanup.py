@@ -54,6 +54,15 @@ class GitHubWorkflowCleanupTests(unittest.TestCase):
         self.assertNotIn("HF_STORAGE_CONTROLLER_TOKEN", yml)
         self.assertNotIn("HF_INSPECTION_READ_TOKEN", yml)
 
+    def test_dependency_audit_runs_without_hugging_face_secrets(self):
+        yml = (WORKFLOWS / "ci.yml").read_text(encoding="utf-8")
+        self.assertIn("dependency-audit:", yml)
+        self.assertIn("python -m pip_audit -r requirements.txt", yml)
+        self.assertIn("schedule:", yml)
+        self.assertIn("contents: read", yml)
+        self.assertNotIn("secrets.", yml)
+        self.assertNotIn("actions/upload-artifact", yml)
+
 
 if __name__ == "__main__":
     unittest.main()

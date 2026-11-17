@@ -3,6 +3,7 @@
 The new owned cache is safe to remove. For older scans, optional legacy mode
 removes only cached novel EPUB/ZIP/cover entries from the specified private
 dataset, using huggingface_hub's reference-aware delete_files strategy.
+Unreferenced blobs may also be reclaimed; blobs still needed elsewhere survive.
 Neither mode connects to or modifies the Hugging Face dataset.
 """
 from __future__ import annotations
@@ -97,7 +98,8 @@ def run(argv: list[str] | None = None) -> int:
             print("Removed owned inspection download cache.")
         if strategy is not None:
             strategy.execute()
-            print(f"Removed {legacy_count} selected legacy cache entries (shared blobs preserved).")
+            print(f"Removed {legacy_count} selected legacy cache entries; "
+                  "blobs retained when other cached revisions still need them.")
         print("Private Hugging Face dataset unchanged.")
         return 0
     except (Exception, KeyboardInterrupt) as exc:
