@@ -539,7 +539,7 @@ def scan(backend: HFReadOnly, mode: str = "quick", cache_root: Path | None = Non
 def compare_retriever(rows: list[dict], registry: dict | None,
                       planned: list[dict] | None) -> dict:
     """Conservative identity matching. Never publish this result to GitHub."""
-    by_url, by_name, by_digest = defaultdict(set), defaultdict(set)
+    by_url, by_name, by_digest = defaultdict(set), defaultdict(set), defaultdict(set)
     identities = {}
     for row in rows:
         ident = row.get("novel_id", "")
