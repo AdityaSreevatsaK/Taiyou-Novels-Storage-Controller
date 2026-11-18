@@ -25,7 +25,18 @@ RETIRED = {
 class GitHubWorkflowCleanupTests(unittest.TestCase):
     def test_only_supported_workflows_remain(self):
         actual = {p.name for p in WORKFLOWS.glob("*.yml")}
-        self.assertEqual(actual, RETAINED)
+        # Only this specifically reviewed, single-shot maintenance workflow
+        # may temporarily coexist with the supported set. A follow-up PR
+        # removes it and restores the strict seven-workflow assertion.
+        one_shot = "one-shot-prune-seven-branches-20261118.yml"
+        self.assertEqual(actual, RETAINED | {one_shot})
+        cleanup = (WORKFLOWS / one_shot).read_text(encoding="utf-8")
+        self.assertIn("branches: [master]", cleanup)
+        self.assertIn("EXPECTED_MASTER", cleanup)
+        self.assertIn("if os.environ.get(\"GH_REPO\") != REPO:", cleanup)
+        self.assertIn("ONE_SHOT =", cleanup)
+        self.assertIn("MERGED =", cleanup)
+        self.assertNotIn("HF_TOKEN", cleanup)
         self.assertTrue(RETIRED.isdisjoint(actual))
 
     def test_private_checks_are_explicit_read_only_and_do_not_upload_artifacts(self):
