@@ -26,8 +26,9 @@ Required GitHub repository secrets:
 
 The action fetches the downloader's **original first chapter-batch EPUB
 metadata**, not chapter content from a novel website. It matches each existing
-book by **unique, exact canonical source URL**, not title. It adds missing
-`sourceTags` and, only where absent, `description` and `status`.
+book by **unique, exact canonical source URL**, not title. It independently
+adds missing `sourceTags`, `description` and `status`, **even when genres are
+already present**. Existing nonempty fields remain unchanged.
 It never replaces EPUBs, original ZIP archives, covers, IDs, ratings,
 progress, personalTags, notes or reviews. Existing nonempty sourceTags
 are preserved. Ambiguous duplicate source URLs are skipped, not deleted.
@@ -41,7 +42,11 @@ GitHub artifacts; workflow output includes counts only.
 for just seven days. Older expired artifacts cannot be recovered automatically;
 these novels are reported as missing rather than assigned guessed tags.
 
-This repair is independent of the cover uploader and normal novel uploader.
+For a locally verified, single-novel catalogue-only correction without
+requiring a retained upstream GitHub artefact, use
+[option 18: Source metadata audit and repair](METADATA_REPAIR.md).
+
+This historical repair is independent of the cover uploader and normal novel uploader.
 A duplicate Abe the Wizard is intentionally **not** deleted or merged.
 
 ## Local command
