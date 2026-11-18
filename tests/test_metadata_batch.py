@@ -194,7 +194,7 @@ class MetadataBatchTests(unittest.TestCase):
         with self.assertRaisesRegex(MetadataRepairError, "duplicate"):
             plan_batch(source, data, approvals, "private/test", "rev", "abc")
         approvals["approved_ids"] = [ID1]
-        with self.assertRaisesRegex(MetadataRepairError, "Approvals"):
+        with self.assertRaisesRegex(MetadataRepairError, "different catalogue revision"):
             plan_batch(source, data, approvals, "private/test", "new", "abc")
 
     def test_every_update_has_private_backup_and_catalogue_only(self):
