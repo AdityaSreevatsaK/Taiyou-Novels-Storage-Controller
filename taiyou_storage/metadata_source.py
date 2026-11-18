@@ -169,9 +169,9 @@ def _freewebnovel(soup: BeautifulSoup, title: str, author: str) -> dict:
             value = _txt(node).casefold()
             if href.startswith(("/sort/completed", "/completed-novel")) or value == "completed":
                 status = "Completed"
-            elif href.startswith(("/sort/ongoing", "/latest-novel")) and value in ("ongoing", "on going"):
-                status = "Ongoing"
-            elif value in STATUS and "/sort/" in href:
+            elif value in STATUS:
+                # The verified book's status link may point to a site-wide
+                # listing (for example /latest-release for "OnGoing").
                 status = STATUS[value]
     synopsis = _book_summary(soup)
     result = {}
@@ -196,7 +196,7 @@ def _novelfull(soup: BeautifulSoup, title: str, author: str) -> dict:
         # Some templates use an info-meta list directly after the H3 title.
         info = next((div for div in soup.select(".info-meta, .book-meta")
                      if author.casefold() in _txt(div).casefold()), None)
-    if info is None or not _same_name(author, author):  # fail closed on unknown layout
+    if info is None:  # fail closed on unknown layout
         raise SourceUnavailable("Unrecognised NovelFull book information panel")
     text = _txt(info)
     if normalized_title(author) not in normalized_title(text):
