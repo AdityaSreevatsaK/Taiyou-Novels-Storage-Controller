@@ -119,8 +119,12 @@ def plan_repair(catalogue: dict, sources: dict[str, dict]) -> tuple[dict, dict]:
     for row in cloned["books"]:
         old = row["metadata"]
         key = source_key(old.get("sourceUrl"))
-        if old.get("sourceTags"):
+        missing_tags = not old.get("sourceTags")
+        missing_description = not old.get("description")
+        missing_status = not old.get("status")
+        if not missing_tags:
             stats["already_tagged"] += 1
+        if not (missing_tags or missing_description or missing_status):
             continue
         if not key:
             stats["unknown_source"] += 1
@@ -130,21 +134,28 @@ def plan_repair(catalogue: dict, sources: dict[str, dict]) -> tuple[dict, dict]:
             continue
         source = sources.get(key) or {}
         genres = subject_genres(source.get("genres") or [])
-        if not genres:
-            stats["missing_genres"] += 1
-            continue
+        changed = False
         # Source-managed only; no changes to IDs, personalTags, progress,
         # reviews, statuses already set, original ZIPs or EPUB binaries.
-        old["sourceTags"] = genres
-        if not old.get("description") and source.get("description"):
-            old["description"] = source["description"][:24000]
+        if missing_tags:
+            if genres:
+                old["sourceTags"] = genres
+                stats["tagged"] += 1
+                changed = True
+            else:
+                stats["missing_genres"] += 1
+        if missing_description and isinstance(source.get("description"), str) and source["description"].strip():
+            old["description"] = source["description"].strip()[:24000]
             stats["descriptions_added"] += 1
-        if not old.get("status") and source.get("status") in ("Ongoing", "Completed"):
+            changed = True
+        if missing_status and source.get("status") in ("Ongoing", "Completed"):
             old["status"] = source["status"]
             stats["statuses_added"] += 1
-        stats["tagged"] += 1
+            changed = True
+        if changed:
+            stats["books_updated"] += 1
     for metric in ("tagged", "already_tagged", "unknown_source", "ambiguous_source",
-                   "missing_genres", "descriptions_added", "statuses_added"):
+                   "missing_genres", "descriptions_added", "statuses_added", "books_updated"):
         stats.setdefault(metric, 0)
     stats["total_books"] = len(cloned["books"])
     return cloned, dict(stats)
@@ -205,7 +216,8 @@ def from_registry(catalogue: dict, registry: dict, github: GithubMetadata) -> tu
             records[key] = (row["url"], int(complete[-1]["run_id"]))
     freq = Counter(source_key(b["metadata"].get("sourceUrl")) for b in catalogue["books"])
     candidates = {k for b in catalogue["books"]
-                  if not b["metadata"].get("sourceTags")
+                  if any(not b["metadata"].get(field)
+                         for field in ("sourceTags", "description", "status"))
                   for k in [source_key(b["metadata"].get("sourceUrl"))]
                   if k and freq[k] == 1 and k in records}
     found = {}
@@ -218,7 +230,7 @@ def from_registry(catalogue: dict, registry: dict, github: GithubMetadata) -> tu
             # Never write guessed tags or copy a different novel's metadata.
             errors += 1
             continue
-        if details.get("genres"):
+        if details.get("genres") or details.get("description") or details.get("status"):
             found[key] = details
     repaired, stats = plan_repair(catalogue, found)
     stats["artifact_read_errors"] = errors
@@ -257,7 +269,7 @@ def main(argv=None) -> int:
         repaired, stats = from_registry(catalogue, registry, client)
         # Public CI logs contain counts only (no private titles, IDs or excerpts).
         print(json.dumps({"mode": "APPLY" if args.apply else "PREVIEW", **stats}, sort_keys=True))
-        if not args.apply or not stats.get("tagged"):
+        if not args.apply or not stats.get("books_updated"):
             return 0
         if api.dataset_info(args.repo, token=token).sha != revision:
             raise GenreRepairError("Dataset changed during preview; refusing write")
@@ -268,7 +280,7 @@ def main(argv=None) -> int:
                           operations=[
                               CommitOperationAdd(path_in_repo=backup, path_or_fileobj=BytesIO(original)),
                               CommitOperationAdd(path_in_repo="data/library.json", path_or_fileobj=BytesIO(result)),
-                          ], commit_message="Backfill verified source genres without changing novel files")
+                          ], commit_message="Backfill verified source genres, synopsis and status without changing novel files")
         print("Private genre repair committed with catalogue backup. No novel EPUBs or ZIPs were changed.")
         return 0
     finally:
