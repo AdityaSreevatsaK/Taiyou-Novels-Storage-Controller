@@ -57,6 +57,22 @@ novel titles or source synopsis text from private catalogue in public
 CI or repository commits. CI uses fictional book pages and fake HF clients.
 See [docs/METADATA_REPAIR.md](docs/METADATA_REPAIR.md).
 
+## Research JSON batch import, 18 November 2026
+
+`metadata_batch.py import` adds the ability to ingest local,
+Git-ignored `reports/metadata-batch-import.json` containing
+`{"version":1,"items":[{"id","sourceUrl","description","sourceTags","status"}]}`
+with any subset of populated source fields per item.
+This source research is **NOT** automatically verified by the parser.
+Import validates exact unique ID and source URL, supported field types and
+add-only semantics for every record before writing a local candidate file.
+The candidates use `RESEARCH_REVIEW` state, which **cannot be
+bulk-approved** via `review --approve-all`. Each novel requires explicit
+one-by-one approval after source inspection, followed by a hash-bound
+review preview and optimistic revision guarded single HF backup+catalogue
+commit. No real private research JSON may be committed into the public repo.
+The importer does not contact novel sites or download any novel chapters.
+
 ## GitHub Actions cleanup and one-click inspections, 17 November 2026
 
 The supported manual inspection workflow is now `.github/workflows/hf-inspect.yml`
