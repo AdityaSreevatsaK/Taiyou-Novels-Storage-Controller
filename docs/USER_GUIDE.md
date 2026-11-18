@@ -79,7 +79,11 @@ the exact remote revision, then require typed confirmation to add fields. The
 private HF commit includes an exact pre-change catalogue backup. ZIPs, EPUBs,
 covers, progress, personal tags and ratings remain untouched.
 
-For multiple missing entries, use the same launcher **options 5–9**:
+For multiple missing entries, use the same launcher **options 5–9** or
+**option 10** to import a prepared private JSON of researched metadata.
+Imported entries require individual approval via option 6 before the
+revision-checked preview (8) and apply (9). Option 7 cannot auto-approve
+imported research. With options 5–9:
 discover verified source fields from public book pages, review and approve
 proposals, preview all approved edits, and make a single revision-guarded
 catalogue-only commit. Source failures stay unresolved and can be repaired
