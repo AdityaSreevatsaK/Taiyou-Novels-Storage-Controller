@@ -40,6 +40,7 @@ only verify remote file listing or manifest evidence, not image pixels.
 | `15_library_health_report.cmd` | Local HTML dashboard, JSON and CSV |
 | **`16_backfill_inspection_manifests.cmd`** | Preview and safely migrate existing books to tiny inspection manifests; explicit `--interactive` or `--apply` to write |
 | **`17_cleanup_inspection_downloads.cmd`** | Preview and delete local-only inspection download cache; optionally target older shared HF novel files |
+| **`18_repair_novel_metadata.cmd`** | Audit missing synopsis/genre/status fields; prepare, preview and safely confirm a one-novel catalogue-only repair |
 
 `00_storage_menu.cmd` offers these working tools in a Windows menu. Launchers **08 and 09 are placeholders**; single-novel restoration and single-novel deletion are not implemented here.
 
@@ -68,6 +69,19 @@ any remote files.
 **Privacy:** Keep exports under `downloads/` (ignored by Git), or outside the
 public code checkout. If you select another destination inside the checkout,
 do not commit private CSV/JSON reports.
+
+## Repair missing synopsis, genre tags or publication status
+
+Use `18_repair_novel_metadata.cmd` to **audit all** novels in the private
+catalogue or **add missing verified fields to one** novel. Option 1 writes a
+local Git-ignored CSV only. Options 2–4 prepare a private JSON draft, preview
+the exact remote revision, then require typed confirmation to add fields. The
+private HF commit includes an exact pre-change catalogue backup. ZIPs, EPUBs,
+covers, progress, personal tags and ratings remain untouched.
+
+See [Metadata repair](METADATA_REPAIR.md) for the step-by-step Windows
+instructions and JSON format. This is independent of the historical genre
+repair tool and does not download chapters.
 
 ## Import novel ZIPs
 

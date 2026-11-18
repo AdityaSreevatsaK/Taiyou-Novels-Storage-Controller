@@ -16,6 +16,25 @@
 
 ---
 
+## Source metadata audit and repair, 18 November 2026
+
+The independent `taiyou_storage/metadata_repair.py` workflow provides a local
+read-only audit of missing source synopsis, genres and publication status, and
+a per-book add-only repair using `18_repair_novel_metadata.cmd`. It uses
+unique book ID **and** exact canonical source URL identity, stores all local
+private drafts and reports in Git-ignored `reports/`, and refuses source field
+overwrites or ambiguous book matches. Apply requires a matching SHA-256 of the
+previewed JSON and identical private dataset revision, typed confirmation,
+and one parent-revision-guarded HF commit adding only `data/library.json`
+plus an exact pre-change **private** backup. No novel files, progress, covers,
+ratings or reviews may be modified. Never run an apply on production as a CI
+test. See [docs/METADATA_REPAIR.md](docs/METADATA_REPAIR.md).
+
+The historical genre-repair workflow now considers each missing field
+independently. A book with existing sourceTags may still be missing a
+description or status. Historical source proof is required; no values are
+invented. It remains optional and artifact-dependent.
+
 ## GitHub Actions cleanup and one-click inspections, 17 November 2026
 
 The supported manual inspection workflow is now `.github/workflows/hf-inspect.yml`

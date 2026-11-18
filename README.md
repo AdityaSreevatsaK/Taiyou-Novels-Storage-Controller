@@ -30,6 +30,7 @@ The uploader safely skips verified duplicate ZIPs, blocks conflicting editions a
 | `13_audit_missing_covers.cmd` | Export missing-cover and cover-audit reports |
 | `15_library_health_report.cmd` | Generate a local HTML health report |
 | `17_cleanup_inspection_downloads.cmd` | Preview and confirm local inspection-cache cleanup |
+| **`18_repair_novel_metadata.cmd`** | Audit missing source fields and safely preview/apply a one-novel catalogue-only repair |
 | `11_clear_hf_data.cmd` | **Full library reset. Destructive; requires a verified backup and typed confirmations.** |
 
 Use the menu for additional catalogue, conflict, chapter, sync and comparison utilities. All commands show **concise count-based summaries**; detailed reports remain in local Git-ignored folders. See the [full command reference](docs/USER_GUIDE.md).
@@ -46,6 +47,7 @@ Use [**HF - Run library checks (read only)**](https://github.com/AdityaSreevatsa
 | Safe uploads and duplicate handling | [Smart upload](docs/SMART_UPLOAD.md) |
 | Inspection, chapter and cover evidence | [Library inspection](docs/LIBRARY_INSPECTION.md) |
 | Backups, cache cleanup and full reset | [Safety and recovery](docs/SAFETY_AND_RECOVERY.md) |
+| Source metadata repair | [Metadata repair guide](docs/METADATA_REPAIR.md) |
 | GitHub Actions and credentials | [Actions guide](docs/GITHUB_ACTIONS.md) |
 
 Browse the [**documentation index**](docs/README.md) for migration history, genre repair and release procedures.

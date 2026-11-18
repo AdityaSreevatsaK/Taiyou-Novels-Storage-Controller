@@ -14,6 +14,7 @@ RENAMED = {
     15: "library_health_report",
     16: "backfill_inspection_manifests",
     17: "cleanup_inspection_downloads",
+    18: "repair_novel_metadata",
 }
 
 
@@ -40,7 +41,7 @@ class WindowsMenuNumberingTests(unittest.TestCase):
                     len(re.findall(rf'if "%choice%"=="{number}" call ', menu)),
                     1,
                 )
-        self.assertEqual(len(list(ROOT.glob("[0-9][0-9]_*.cmd"))), 18)
+        self.assertEqual(len(list(ROOT.glob("[0-9][0-9]_*.cmd"))), 19)
 
     def test_deprecated_launcher_names_no_longer_exist(self):
         old = {
