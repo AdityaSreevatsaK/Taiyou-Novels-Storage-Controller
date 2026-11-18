@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 from taiyou_storage.metadata_batch import (
     CANDIDATES, APPROVALS, PREVIEW, _targets, discover_candidates,
-    main, plan_batch,
+    import_researched_candidates, main, plan_batch,
 )
 from taiyou_storage.metadata_repair import MetadataRepairError, _save_private_json
 from taiyou_storage.metadata_source import (
@@ -65,6 +65,113 @@ def catalogue():
                description="Existing synopsis"),
         record(ID3, "Missing Source", "Someone", NOT_AVAILABLE),
     ]}
+
+
+class ResearchImportTests(unittest.TestCase):
+    """Imported data is source research, never silently live-site verified."""
+
+    def test_import_validates_identity_but_requires_individual_approval(self):
+        source = catalogue()
+        original = deepcopy(source)
+        research = {
+            "version": 1, "items": [
+                {"id": ID1, "sourceUrl": FREE,
+                 "sourceTags": ["Fantasy", "Romance"], "status": "Ongoing",
+                 "description": "A source synopsis written independently."},
+                {"id": ID2, "sourceUrl": NOVEL,
+                 "sourceTags": ["Adventure", "Action"]},
+            ],
+        }
+        candidates, rows = import_researched_candidates(source, "private/test", "rev", research)
+        self.assertEqual(source, original)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["state"], "RESEARCH_REVIEW")
+        self.assertEqual(rows[0]["verified_fields"], "")
+        self.assertEqual(rows[0]["proposed_fields"], "description,sourceTags,status")
+        self.assertEqual(rows[1]["unresolved_fields"], "status")
+        self.assertEqual(candidates["items"][0]["proposed"]["sourceTags"],
+                         ["Fantasy", "Romance"])
+        approvals = {
+            "version": 1, "dataset": "private/test", "revision": "rev",
+            "candidates_sha256": "ABC", "approved_ids": [ID1, ID2],
+        }
+        repaired, changes = plan_batch(source, candidates, approvals,
+                                       "private/test", "rev", "ABC")
+        self.assertEqual(len(changes), 2)
+        self.assertEqual(repaired["books"][0]["metadata"]["status"], "Ongoing")
+        self.assertEqual(repaired["books"][0]["metadata"]["personalTags"], ["Keep"])
+        self.assertEqual(repaired["books"][0]["metadata"]["progress"], 74)
+        self.assertEqual(repaired["books"][1]["metadata"]["description"], "Existing synopsis")
+        self.assertNotIn("status", repaired["books"][1]["metadata"])
+
+    def test_duplicate_wrong_source_and_populated_field_refused(self):
+        source = catalogue()
+        okay = {"id": ID1, "sourceUrl": FREE, "status": "Completed"}
+        cases = [
+            {"version": 1, "items": [okay, okay]},
+            {"version": 1, "items": [{**okay, "sourceUrl": NOVEL}]},
+            {"version": 1, "items": [{**okay, "personalTags": ["Change me"]}]},
+            {"version": 1, "items": [{**okay, "id": "d" * 24}]},
+            {"version": 1, "items": [{**okay, "description": ""}]},
+            {"version": 1, "items": [{**okay, "status": "Finished"}]},
+            {"version": 1, "items": []},
+            {"version": 1, "items": [1]},
+        ]
+        for item in cases:
+            with self.subTest(case=item), self.assertRaises(MetadataRepairError):
+                import_researched_candidates(source, "private/test", "rev", item)
+
+    def test_import_creates_private_candidates_and_bulk_approve_all_never_includes_imported(self):
+        from taiyou_storage.metadata_batch import REVIEW_CSV
+        with tempfile.TemporaryDirectory() as tmp:
+            old = Path.cwd()
+            try:
+                os.chdir(tmp)
+                Path("reports").mkdir()
+                research = {"version": 1, "items": [
+                    {"id": ID1, "sourceUrl": FREE, "sourceTags": ["Fantasy"]},
+                ]}
+                Path("reports/metadata-batch-import.json").write_text(
+                    json.dumps(research), encoding="utf-8"
+                )
+                source = catalogue()
+                api = SimpleNamespace()
+                loaded = (api, "rev", json.dumps(source).encode(), source)
+                with patch("taiyou_storage.metadata_batch._load_private_catalogue",
+                           return_value=loaded), \
+                     patch.dict(os.environ, {"GITHUB_ACTIONS": "false"}):
+                    self.assertEqual(main(["import", "--repo", "private/test"]), 0)
+                    self.assertTrue(CANDIDATES.exists())
+                    self.assertTrue(REVIEW_CSV.exists())
+                    with patch("builtins.input", return_value="APPROVE 1 VERIFIED"):
+                        self.assertEqual(main(["review", "--repo", "private/test",
+                                               "--approve-all"]), 0)
+                    self.assertFalse(APPROVALS.exists())
+                    with patch("builtins.input", return_value="YES"):
+                        self.assertEqual(main(["review", "--repo", "private/test"]), 0)
+                    self.assertEqual(json.loads(APPROVALS.read_text())["approved_ids"], [ID1])
+                    self.assertEqual(main(["preview", "--repo", "private/test"]), 0)
+                    self.assertTrue(PREVIEW.exists())
+                self.assertEqual(source, catalogue())
+            finally:
+                os.chdir(old)
+
+    def test_private_import_cannot_escape_reports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            old = Path.cwd()
+            try:
+                os.chdir(tmp)
+                Path("reports").mkdir()
+                api = SimpleNamespace()
+                source = catalogue()
+                with patch("taiyou_storage.metadata_batch._load_private_catalogue",
+                           return_value=(api, "rev", b"{}", source)), \
+                     patch.dict(os.environ, {"GITHUB_ACTIONS": "false"}):
+                    with self.assertRaisesRegex(MetadataRepairError, "reports"):
+                        main(["import", "--repo", "private/test", "--input",
+                              "../private-export.json"])
+            finally:
+                os.chdir(old)
 
 
 class PublicSourceTests(unittest.TestCase):
