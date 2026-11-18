@@ -30,7 +30,7 @@ The uploader safely skips verified duplicate ZIPs, blocks conflicting editions a
 | `13_audit_missing_covers.cmd` | Export missing-cover and cover-audit reports |
 | `15_library_health_report.cmd` | Generate a local HTML health report |
 | `17_cleanup_inspection_downloads.cmd` | Preview and confirm local inspection-cache cleanup |
-| **`18_repair_novel_metadata.cmd`** | Audit missing source fields and safely preview/apply a one-novel catalogue-only repair |
+| **`18_repair_novel_metadata.cmd`** | Audit missing source fields; safely preview/repair one novel or review/repair multiple novels in one backup-first HF commit |
 | `11_clear_hf_data.cmd` | **Full library reset. Destructive; requires a verified backup and typed confirmations.** |
 
 Use the menu for additional catalogue, conflict, chapter, sync and comparison utilities. All commands show **concise count-based summaries**; detailed reports remain in local Git-ignored folders. See the [full command reference](docs/USER_GUIDE.md).
