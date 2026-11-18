@@ -20,6 +20,7 @@ echo 14. Compare Novel Retriever inventory
 echo 15. Library health dashboard
 echo 16. Backfill remote inspection manifests (preview or approved upload)
 echo 17. Clean up local inspection downloads (preview or delete)
+echo 18. Audit or repair one novel's source metadata (safe preview/backup)
 echo 0. Exit
 echo.
 set /p "choice=Choice: "
@@ -38,5 +39,6 @@ if "%choice%"=="14" call "%~dp014_compare_retriever_inventory.cmd"
 if "%choice%"=="15" call "%~dp015_library_health_report.cmd"
 if "%choice%"=="16" call "%~dp016_backfill_inspection_manifests.cmd"
 if "%choice%"=="17" call "%~dp017_cleanup_inspection_downloads.cmd"
+if "%choice%"=="18" call "%~dp018_repair_novel_metadata.cmd"
 if "%choice%"=="0" exit /b 0
 goto menu
