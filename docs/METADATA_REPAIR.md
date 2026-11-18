@@ -5,6 +5,64 @@ This tool works only with your **PRIVATE** Hugging Face dataset, and never
 replaces any EPUB, original ZIP, cover, reading progress, personal tags,
 ratings, reviews, collections or other personal metadata.
 
+## Use an existing research JSON for multiple novels
+
+If you already have a metadata research package, for example the file
+`novel_metadata_verified_patches_18.json` generated after reviewing the
+19-novel missing-metadata audit, you do **not** need to run automated
+discovery again.
+
+1. Download the researched file privately, rename it
+   **`metadata-batch-import.json`**, and put it in the local
+   **`reports/`** folder of the Storage Controller. Do **not** commit
+   the file to GitHub. The file uses this strict allow-listed structure:
+
+   ```json
+   {
+     "version": 1,
+     "items": [
+       {
+         "id": "aaaaaaaaaaaaaaaaaaaaaaaa",
+         "sourceUrl": "https://freewebnovel.com/novel/example-book",
+         "description": "A verified or independently researched summary.",
+         "sourceTags": ["Fantasy", "Romance"],
+         "status": "Completed"
+       }
+     ]
+   }
+   ```
+
+2. Double-click **`18_repair_novel_metadata.cmd`** and choose
+   **10: Import researched source metadata JSON**. No novel websites are
+   queried during import. The controller matches every submitted ID with
+   the existing private catalogue, checks its source URL is unique, and
+   rejects fields already filled in. It rejects the *entire* file if any
+   book identity or field is invalid.
+3. Open `reports/metadata-batch-review.csv` and
+   `reports/metadata-batch-candidates.json`. Imported suggestions are
+   explicitly marked **`RESEARCH_REVIEW`**, not automatically verified.
+4. Choose **6: Review and approve each imported novel** after checking
+   its data against the original source. **Option 7: Approve all verified**
+   deliberately does NOT approve manually imported research.
+5. Choose **8: Preview**. The tool checks the exact candidate and approval
+   file hashes and current private Hugging Face catalogue revision.
+6. Choose **9: Apply**, review the change count and type
+   `APPLY N` when prompted. The one commit updates only
+   `data/library.json` and saves the previous catalogue to a **private**
+   backup. No EPUB, original ZIP, cover or reading data is replaced.
+7. Use **Refresh Cloud Library** in the app.
+
+If a particular novel is absent from the research package (for example a
+dead link), it remains untouched for later manual verification. The import
+cannot infer missing source information and never overwrites any already
+populated field. A *source listing* status may reflect availability on
+that site, not the original novel's publication or translation status.
+
+**Note:** Options 5 (live discovery) and 10 (researched JSON import) both
+create a candidate review. The programme refuses to overwrite existing
+candidate, approval or preview files. Finish the current review, or back
+up and remove all three local files before starting a new one.
+
 ## Bulk repair multiple novels without re-downloading chapters
 
 The Windows launcher also offers a separate multi-novel flow, designed for

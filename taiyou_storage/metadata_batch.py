@@ -22,10 +22,12 @@ from .core import DEFAULT_REPO, validate_catalogue, write_csv
 from .metadata_repair import (
     FIELDS, MetadataRepairError, _load_private_catalogue,
     _report_path, _save_private_json, _source_key, missing_fields, plan_repair,
+    validate_patch,
 )
 from .metadata_source import SourceUnavailable, checked_book_url, public_book_html, verified_metadata
 
 CANDIDATES = Path("reports/metadata-batch-candidates.json")
+IMPORT = Path("reports/metadata-batch-import.json")
 REVIEW_CSV = Path("reports/metadata-batch-review.csv")
 APPROVALS = Path("reports/metadata-batch-approvals.json")
 PREVIEW = Path("reports/metadata-batch-preview.json")
@@ -33,7 +35,7 @@ MAX_NOVELS = 250
 MAX_INPUT = 5 * 1024 * 1024
 CSV_FIELDS = (
     "id", "title", "source_url", "missing_fields",
-    "verified_fields", "unresolved_fields", "state", "reason",
+    "proposed_fields", "verified_fields", "unresolved_fields", "state", "reason",
 )
 
 
@@ -136,7 +138,8 @@ def discover_candidates(catalogue: dict, repo: str, revision: str, *,
         rows.append({
             "id": book["id"], "title": str(meta.get("title") or ""),
             "source_url": url, "missing_fields": ",".join(missing),
-            "verified_fields": ",".join(values), "unresolved_fields": ",".join(remaining),
+            "proposed_fields": ",".join(values), "verified_fields": ",".join(values),
+            "unresolved_fields": ",".join(remaining),
             "state": state, "reason": reason,
         })
     document = {
@@ -146,6 +149,62 @@ def discover_candidates(catalogue: dict, repo: str, revision: str, *,
         "items": proposals,
     }
     return document, rows
+
+
+def import_researched_candidates(catalogue: dict, repo: str, revision: str,
+                                research: dict) -> tuple[dict, list[dict]]:
+    """Convert local research JSON into strictly review-required proposals.
+
+    Imported material is NOT source-verified by this tool. It cannot use the
+    bulk approve-all shortcut: each book requires explicit source checking
+    and separate approval. This imports source metadata only, not novels.
+    """
+    validate_catalogue(catalogue)
+    if (set(research) != {"version", "items"} or research["version"] != 1
+            or not isinstance(research["items"], list)
+            or not 1 <= len(research["items"]) <= MAX_NOVELS):
+        raise MetadataRepairError("Invalid researched metadata import envelope")
+    by_id = {book["id"]: book for book in catalogue["books"]}
+    seen, proposals, rows = set(), [], []
+    for raw in research["items"]:
+        patch = validate_patch(raw)
+        ident = patch["id"]
+        if ident in seen:
+            raise MetadataRepairError("Duplicate novel in researched metadata import")
+        seen.add(ident)
+        book = by_id.get(ident)
+        if not book:
+            raise MetadataRepairError("Imported book ID not in the current private catalogue")
+        # Existing one-book source URL and ambiguity checks are authoritative.
+        _, changed, _ = plan_repair(catalogue, patch)
+        if not changed:
+            raise MetadataRepairError("Import includes a novel with no missing fields to add")
+        missing = missing_fields(book["metadata"])
+        proposed = {field: patch[field] for field in changed}
+        unresolved = [field for field in missing if field not in proposed]
+        meta = book["metadata"]
+        proposals.append({
+            "id": ident, "sourceUrl": meta["sourceUrl"],
+            "title": str(meta.get("title") or ""),
+            "author": str(meta.get("author") or ""),
+            "missing": missing, "proposed": proposed,
+            "state": "RESEARCH_REVIEW", "unresolved": unresolved,
+            "reason": "Imported source research: check source page and approve individually",
+        })
+        rows.append({
+            "id": ident, "title": str(meta.get("title") or ""),
+            "source_url": meta["sourceUrl"], "missing_fields": ",".join(missing),
+            "proposed_fields": ",".join(changed), "verified_fields": "",
+            "unresolved_fields": ",".join(unresolved),
+            "state": "RESEARCH_REVIEW",
+            "reason": "Human must verify imported research and approve this book",
+        })
+    return {
+        "version": 1, "dataset": repo, "revision": revision,
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "source_policy": "Local researched source metadata; not verified by network parser",
+        "items": proposals,
+    }, rows
 
 
 def _validate_candidates(data: dict, repo: str, revision: str) -> list[dict]:
@@ -165,9 +224,9 @@ def _validate_candidates(data: dict, repo: str, revision: str) -> list[dict]:
             raise MetadataRepairError("Unsupported candidate source metadata fields")
         if not isinstance(item["missing"], list) or not isinstance(item["unresolved"], list):
             raise MetadataRepairError("Invalid candidate field lists")
-        if item["state"] not in ("SOURCE_VERIFIED", "REVIEW_REQUIRED"):
+        if item["state"] not in ("SOURCE_VERIFIED", "REVIEW_REQUIRED", "RESEARCH_REVIEW"):
             raise MetadataRepairError("Invalid candidate verification state")
-        if item["state"] != "SOURCE_VERIFIED" and item["proposed"]:
+        if item["state"] == "REVIEW_REQUIRED" and item["proposed"]:
             raise MetadataRepairError("Unverified candidates cannot contain repairs")
         if set(item["proposed"]) - set(item["missing"]):
             raise MetadataRepairError("Proposal would change an already-present field")
@@ -193,7 +252,7 @@ def plan_batch(catalogue: dict, candidates: dict, approvals: dict,
     changes = []
     for ident in approved:
         item = indexed.get(ident)
-        if item is None or item["state"] != "SOURCE_VERIFIED" or not item["proposed"]:
+        if item is None or item["state"] not in ("SOURCE_VERIFIED", "RESEARCH_REVIEW") or not item["proposed"]:
             raise MetadataRepairError("An approved novel lacks verified source fields")
         live = [b for b in catalogue["books"] if b["id"] == ident]
         if len(live) != 1 or set(missing_fields(live[0]["metadata"])) != set(item["missing"]):
@@ -222,10 +281,13 @@ def _approval_payload(repo: str, revision: str, candidates_digest: str) -> tuple
 def review_candidates(repo: str, revision: str, approve_all: bool = False) -> int:
     data, payload, items = _candidate_payload(repo, revision)
     verified = [item for item in items if item["state"] == "SOURCE_VERIFIED" and item["proposed"]]
-    if not verified:
-        print("No safely verified source suggestions. All novels require manual review.")
+    researched = [item for item in items if item["state"] == "RESEARCH_REVIEW" and item["proposed"]]
+    reviewable = verified + researched
+    if not reviewable:
+        print("No available metadata suggestions. All novels require manual research.")
         return 0
-    print("Verified source suggestions:", len(verified))
+    print("Live source-verified suggestions:", len(verified))
+    print("Imported research needing individual verification:", len(researched))
     print("Review all details in reports/metadata-batch-candidates.json before approving.")
     print("No remote changes occur during this review.")
     ids = []
@@ -234,8 +296,11 @@ def review_candidates(repo: str, revision: str, approve_all: bool = False) -> in
         if input(f"Type {phrase} to approve ALL verified suggestions: ").strip() == phrase:
             ids = [item["id"] for item in verified]
     else:
-        for item in verified:
+        for item in reviewable:
             print("\nNovel:", item["title"])
+            if item["state"] == "RESEARCH_REVIEW":
+                print("IMPORTED RESEARCH, not independently checked by this programme.")
+                print("Verify every proposed field against the original source before approval.")
             print("Source:", item["sourceUrl"])
             print("Proposed:", json.dumps(item["proposed"], ensure_ascii=False, indent=2))
             if item["unresolved"]:
@@ -265,8 +330,10 @@ def _prepare_plan(catalogue: dict, repo: str, revision: str):
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("discover", "review", "preview", "apply"))
+    parser.add_argument("action", choices=("discover", "import", "review", "preview", "apply"))
     parser.add_argument("--repo", default=os.environ.get("HF_DATASET_REPO", DEFAULT_REPO))
+    parser.add_argument("--input", type=Path, default=IMPORT,
+                        help="Local researched metadata JSON for import (reports/ only)")
     parser.add_argument("--targets", type=Path, default=None,
                         help="Optional reports/missing-source-metadata.csv to select subset")
     parser.add_argument("--approve-all", action="store_true", help="Review: approve source-verified candidates after typed confirmation")
@@ -279,21 +346,27 @@ def main(argv=None) -> int:
         raise MetadataRepairError("--targets is only valid for discover")
     token = os.environ.get("HF_TOKEN") or None
     api, revision, original, catalogue = _load_private_catalogue(args.repo, token)
-    if args.action == "discover":
+    if args.action in ("discover", "import"):
         # Avoid silently replacing a previously approved/previewed review.
         if any(_report_path(x).exists() for x in (CANDIDATES, APPROVALS, PREVIEW)):
             raise MetadataRepairError(
                 "Existing batch review files found. Back them up and remove candidates, "
                 "approvals and preview before starting a new discovery."
             )
-        doc, rows = discover_candidates(catalogue, args.repo, revision, audit=args.targets)
+        if args.action == "discover":
+            doc, rows = discover_candidates(catalogue, args.repo, revision, audit=args.targets)
+        else:
+            research, _ = _read_json(args.input)
+            doc, rows = import_researched_candidates(catalogue, args.repo, revision, research)
         _save_private_json(CANDIDATES, doc)
         write_csv(_report_path(REVIEW_CSV), rows, list(CSV_FIELDS))
         ready = sum(x["state"] == "SOURCE_VERIFIED" for x in doc["items"])
+        research_count = sum(x["state"] == "RESEARCH_REVIEW" for x in doc["items"])
         unresolved = sum(bool(x["unresolved"]) for x in doc["items"])
         print(json.dumps({
             "novels_checked": len(rows), "novels_with_verified_fields": ready,
-            "novels_needing_review": unresolved, "mode": "READ ONLY",
+            "imported_research_needing_approval": research_count,
+            "novels_with_unresolved_fields": unresolved, "mode": "READ ONLY",
         }, sort_keys=True))
         print("Local review CSV:", REVIEW_CSV)
         print("Local proposed source fields:", CANDIDATES)
