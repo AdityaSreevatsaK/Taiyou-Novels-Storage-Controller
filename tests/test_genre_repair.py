@@ -74,8 +74,54 @@ class GenreRepairTests(unittest.TestCase):
         duplicate = {"version": 1, "books": [book(), book("b" * 24, sourceTags=["Romance"])]}
         result, stats = plan_repair(duplicate, {source_key(URL): {"genres": ["Fantasy"]}})
         self.assertNotIn("sourceTags", result["books"][0]["metadata"])
-        self.assertEqual(stats["ambiguous_source"], 1)
+        self.assertEqual(stats["ambiguous_source"], 2)
         self.assertEqual(stats["already_tagged"], 1)
+
+
+    def test_existing_tags_do_not_block_missing_description_and_status(self):
+        original = {"version": 1, "books": [book(sourceTags=["Action"])]}
+        before = deepcopy(original)
+        repaired, stats = plan_repair(original, {
+            source_key(URL): {"genres": ["Comedy"], "description": "Verified source synopsis",
+                              "status": "Completed"},
+        })
+        meta = repaired["books"][0]["metadata"]
+        self.assertEqual(meta["sourceTags"], ["Action"])
+        self.assertEqual(meta["description"], "Verified source synopsis")
+        self.assertEqual(meta["status"], "Completed")
+        self.assertEqual(stats["tagged"], 0)
+        self.assertEqual(stats["books_updated"], 1)
+        self.assertEqual(stats["descriptions_added"], 1)
+        self.assertEqual(stats["statuses_added"], 1)
+        self.assertEqual(original, before)
+
+    def test_genres_missing_but_description_present_repairs_status_independently(self):
+        data = {"version": 1, "books": [book(description="Existing")]}
+        result, stats = plan_repair(data, {source_key(URL): {"status": "Ongoing"}})
+        self.assertEqual(result["books"][0]["metadata"]["description"], "Existing")
+        self.assertEqual(result["books"][0]["metadata"]["status"], "Ongoing")
+        self.assertNotIn("sourceTags", result["books"][0]["metadata"])
+        self.assertEqual(stats["missing_genres"], 1)
+        self.assertEqual(stats["books_updated"], 1)
+
+    def test_registry_fetches_partially_tagged_records_for_missing_summary(self):
+        class FakeGH:
+            def first_batch(self, url, run_id):
+                self.calls.append((url, run_id))
+                return {"description": "Verified", "status": "Completed"}
+            def __init__(self): self.calls = []
+        github = FakeGH()
+        registry = {"novels": [{
+            "url": URL, "downloads": [{"range": "all", "status": "complete", "run_id": 88}],
+        }]}
+        result, stats = from_registry(
+            {"version": 1, "books": [book(sourceTags=["Existing"])]},
+            registry, github,
+        )
+        self.assertEqual(github.calls, [(URL, 88)])
+        self.assertEqual(result["books"][0]["metadata"]["description"], "Verified")
+        self.assertEqual(result["books"][0]["metadata"]["sourceTags"], ["Existing"])
+        self.assertEqual(stats["books_updated"], 1)
 
     def test_unknown_or_absent_genres_do_not_create_empty_fields(self):
         result, stats = plan_repair({"version": 1, "books": [book()]}, {})
