@@ -35,6 +35,28 @@ independently. A book with existing sourceTags may still be missing a
 description or status. Historical source proof is required; no values are
 invented. It remains optional and artifact-dependent.
 
+## Multi-novel metadata discovery and repair, 18 November 2026
+
+`taiyou_storage/metadata_batch.py` extends the Windows metadata launcher
+with options 5–9. Discovery uses only verified public book information pages
+via `metadata_source.py`, with an exact host/path allowlist, no redirects,
+cookies, retries, page-chapter requests or access-bypass mechanisms.
+Each site parser must confirm the novel's exact title and author, keep genre
+links within the selected book's header, and refuse unverified fields.
+
+Discovery and review produce Git-ignored **LOCAL PRIVATE** CSV/JSON evidence
+in `reports/`. Candidate set, review approvals, preview and application are
+bound to immutable SHA digests and the private dataset revision. Approved
+proposals use the existing one-novel additive-only `plan_repair` contract
+for each unique source URL and ID. Apply requires an exact count-specific
+interactive confirmation and creates one Hugging Face commit containing only
+`data/library.json` and a previous-catalogue private backup. Changes to
+the dataset revision invalidate the plan. All unknown or blocked pages remain
+manual-review items, not automated metadata suggestions. Never place real
+novel titles or source synopsis text from private catalogue in public
+CI or repository commits. CI uses fictional book pages and fake HF clients.
+See [docs/METADATA_REPAIR.md](docs/METADATA_REPAIR.md).
+
 ## GitHub Actions cleanup and one-click inspections, 17 November 2026
 
 The supported manual inspection workflow is now `.github/workflows/hf-inspect.yml`
