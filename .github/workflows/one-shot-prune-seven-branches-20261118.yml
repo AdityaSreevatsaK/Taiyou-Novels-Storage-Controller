@@ -1,0 +1,154 @@
+# One-shot maintenance: exact reviewed heads; any changes or open PR preserve branch.
+# Triggered only when this file enters master. Never deletes master or unrelated refs.
+name: "One-shot - prune obsolete Storage Controller branches (2026-11-18)"
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - .github/workflows/one-shot-prune-seven-branches-20261118.yml
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: taiyou-storage-branch-prune
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    if: github.repository == 'AdityaSreevatsaK/Taiyou-Novels-Storage-Controller'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      EXPECTED_MASTER: ${{ github.sha }}
+    steps:
+      - name: Revalidate seven exact stale branch refs and prune safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from urllib.error import HTTPError
+          from urllib.parse import quote, urlencode
+          from urllib.request import Request, urlopen
+
+          REPO = "AdityaSreevatsaK/Taiyou-Novels-Storage-Controller"
+          if os.environ.get("GH_REPO") != REPO:
+              raise SystemExit("Unexpected repository; refusing cleanup")
+          TOKEN = os.environ["GH_TOKEN"]
+          OWNER = REPO.split("/", 1)[0]
+
+          # name: (exact branch head SHA, verified merged PR number)
+          MERGED = {
+              "docs/post-migration-audit-20261114": ("225fad839881ff05469e08e9cad51ca5a8d7f319", 26),
+              "feature/safe-local-zip-dedupe-20261116": ("07bf8a2d913a738277f981fbdc94bec49268856b", 28),
+              "ops/diagnose-private-backup-access-20261113": ("53a670129aecb818f39e8768e297252a280602b4", 24),
+              "ops/verify-private-backup-20261113": ("16a7fc32b906ce63a9a980591e893f2e2541c35b", 23),
+              "safety/one-novel-readable-pilot-20261114": ("28b2cd1d437c09aabef6deb72f8cb1b582977252", 25),
+              "test/readable-folder-batch-acceptance-20261113": ("eb3517f4e853da65c65dcf243024955792ad2256", 21),
+          }
+          # This seventh branch has only two obsolete one-shot workflows.
+          ONE_SHOT = {
+              "ops/run-hf-inspection-20261117": (
+                  "c6498a8add36286452564ebba82e4eb74e34d778",
+                  frozenset({
+                      ".github/workflows/one-shot-cover-preview-20261117.yml",
+                      ".github/workflows/one-shot-hf-inspection-20261117.yml",
+                  }),
+              ),
+          }
+          SELF = "maintenance/prune-seven-obsolete-branches-20261118"
+
+          def api(path, method="GET"):
+              request = Request(
+                  "https://api.github.com/" + path,
+                  method=method,
+                  headers={
+                      "Authorization": "Bearer " + TOKEN,
+                      "Accept": "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "taiyou-reviewed-branch-prune-20261118",
+                  },
+              )
+              with urlopen(request, timeout=40) as response:
+                  payload = response.read()
+              return json.loads(payload) if payload else None
+
+          def branch(name):
+              try:
+                  return api(f"repos/{REPO}/branches/{quote(name, safe='/')}")
+              except HTTPError as error:
+                  if error.code == 404:
+                      return None
+                  raise
+
+          def open_prs(name):
+              query = urlencode({"head": f"{OWNER}:{name}", "state": "open", "per_page": 100})
+              return api(f"repos/{REPO}/pulls?{query}")
+
+          def merged_pr_matches(name, sha, number):
+              pr = api(f"repos/{REPO}/pulls/{number}")
+              return bool(
+                  pr.get("merged_at") and pr["head"]["ref"] == name
+                  and pr["head"]["sha"] == sha and pr["base"]["ref"] == "master"
+              )
+
+          if branch("master")["commit"]["sha"] != os.environ["EXPECTED_MASTER"]:
+              raise SystemExit("Master moved since workflow was queued; nothing deleted")
+
+          approved = dict(MERGED)
+          for name, (sha, expected_files) in ONE_SHOT.items():
+              compare = api(f"repos/{REPO}/compare/master...{quote(name, safe='/')}")
+              changed_files = frozenset(file["filename"] for file in compare["files"])
+              if changed_files == expected_files:
+                  approved[name] = (sha, None)
+              else:
+                  print(f"PRESERVED: {name} (unexpected changes)")
+
+          # The cleanup PR's own branch can also be removed after it is merged.
+          self_info = branch(SELF)
+          if self_info:
+              sha = self_info["commit"]["sha"]
+              query = urlencode({"head": f"{OWNER}:{SELF}", "state": "closed", "per_page": 100})
+              related = api(f"repos/{REPO}/pulls?{query}")
+              for pr in related:
+                  if (pr.get("merged_at") and pr["head"]["ref"] == SELF
+                          and pr["head"]["sha"] == sha and pr["base"]["ref"] == "master"):
+                      approved[SELF] = (sha, pr["number"])
+                      break
+
+          deleted, preserved = 0, 0
+          for name, (expected_sha, pr_number) in approved.items():
+              if name == "master":
+                  raise SystemExit("Unsafe allowlist: master")
+              info = branch(name)
+              if not info:
+                  print(f"ALREADY ABSENT: {name}")
+                  continue
+              if (info.get("protected") or
+                      info["commit"]["sha"] != expected_sha or open_prs(name)):
+                  print(f"PRESERVED: {name} (protected, moved or open PR)")
+                  preserved += 1
+                  continue
+              if pr_number and not merged_pr_matches(name, expected_sha, pr_number):
+                  print(f"PRESERVED: {name} (PR evidence does not match)")
+                  preserved += 1
+                  continue
+              if branch("master")["commit"]["sha"] != os.environ["EXPECTED_MASTER"]:
+                  raise SystemExit("Master changed during cleanup; stopping")
+              current = branch(name)
+              if (not current or current.get("protected") or
+                      current["commit"]["sha"] != expected_sha or open_prs(name)):
+                  print(f"PRESERVED: {name} (ref changed during cleanup)")
+                  preserved += 1
+                  continue
+              api(f"repos/{REPO}/git/refs/heads/{quote(name, safe='/')}", method="DELETE")
+              print(f"DELETED: {name}")
+              deleted += 1
+          print(f"Review summary: {deleted} refs deleted, {preserved} refs preserved.")
+          PY
