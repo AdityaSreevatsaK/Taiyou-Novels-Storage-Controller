@@ -158,7 +158,8 @@ class RepairTransactionTests(unittest.TestCase):
                         self.commits.append(kwargs)
                 api = FakeAPI()
                 loader = (api, api.revision, original, current)
-                with patch("taiyou_storage.metadata_repair._load_private_catalogue", return_value=loader):
+                with patch("taiyou_storage.metadata_repair._load_private_catalogue", return_value=loader), \
+                     patch.dict(os.environ, {"GITHUB_ACTIONS": "false"}):
                     self.assertEqual(main(["preview"]), 0)
                     self.assertEqual(api.commits, [])
                     with patch("builtins.input", return_value="APPLY"):
@@ -186,7 +187,8 @@ class RepairTransactionTests(unittest.TestCase):
                 source = {"version": 1, "books": [book()]}
                 api = SimpleNamespace(dataset_info=lambda *a, **k: SimpleNamespace(sha="new"))
                 with patch("taiyou_storage.metadata_repair._load_private_catalogue",
-                           side_effect=[(api, "old", b"{}", source), (api, "new", b"{}", source)]):
+                           side_effect=[(api, "old", b"{}", source), (api, "new", b"{}", source)]), \
+                     patch.dict(os.environ, {"GITHUB_ACTIONS": "false"}):
                     self.assertEqual(main(["preview"]), 0)
                     with self.assertRaisesRegex(MetadataRepairError, "changed"):
                         main(["apply"])
