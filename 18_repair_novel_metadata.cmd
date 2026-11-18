@@ -16,6 +16,7 @@ echo 6. Review and approve verified proposals one by one (LOCAL ONLY)
 echo 7. Approve ALL verified proposals after reviewing CSV (LOCAL ONLY)
 echo 8. Preview approved bulk changes against PRIVATE HF catalogue
 echo 9. Apply reviewed bulk changes in ONE PRIVATE HF commit
+echo 10. Import researched source metadata JSON (requires individual review)
 echo 0. Cancel
 echo.
 set /p "choice=Choose: "
@@ -28,6 +29,7 @@ if "%choice%"=="6" goto :batch_review
 if "%choice%"=="7" goto :batch_all
 if "%choice%"=="8" goto :batch_preview
 if "%choice%"=="9" goto :batch_apply
+if "%choice%"=="10" goto :batch_import
 if "%choice%"=="0" exit /b 0
 echo Unrecognised option.
 exit /b 1
@@ -50,6 +52,10 @@ goto :finish
 
 :batch_discover
 py -m taiyou_storage.metadata_batch discover
+goto :finish
+
+:batch_import
+py -m taiyou_storage.metadata_batch import
 goto :finish
 
 :batch_review
