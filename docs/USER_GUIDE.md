@@ -79,6 +79,12 @@ the exact remote revision, then require typed confirmation to add fields. The
 private HF commit includes an exact pre-change catalogue backup. ZIPs, EPUBs,
 covers, progress, personal tags and ratings remain untouched.
 
+For multiple missing entries, use the same launcher **options 5–9**:
+discover verified source fields from public book pages, review and approve
+proposals, preview all approved edits, and make a single revision-guarded
+catalogue-only commit. Source failures stay unresolved and can be repaired
+individually after manual verification. No chapters are fetched.
+
 See [Metadata repair](METADATA_REPAIR.md) for the step-by-step Windows
 instructions and JSON format. This is independent of the historical genre
 repair tool and does not download chapters.

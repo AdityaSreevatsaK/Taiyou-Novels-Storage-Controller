@@ -4,3 +4,6 @@ huggingface_hub>=0.24,<2
 
 # Strict image decoding in read-only cover audits
 Pillow>=13,<14
+
+# Parse verified public book metadata; never download chapters.
+beautifulsoup4>=4.14,<5

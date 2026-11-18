@@ -5,6 +5,83 @@ This tool works only with your **PRIVATE** Hugging Face dataset, and never
 replaces any EPUB, original ZIP, cover, reading progress, personal tags,
 ratings, reviews, collections or other personal metadata.
 
+## Bulk repair multiple novels without re-downloading chapters
+
+The Windows launcher also offers a separate multi-novel flow, designed for
+an audit such as a 19-book missing-metadata report.
+
+1. Update the Storage Controller from `master`. Double-click
+   `18_repair_novel_metadata.cmd` and choose **5: Discover all**.
+   The command reads your **private** live `data/library.json`, then attempts
+   **one public book-information page per missing novel**. It never requests
+   chapters, other books, mirrors or locked pages. It uses no login bypass,
+   automated retries or private GitHub artefacts.
+2. Inspect the local **`reports/metadata-batch-review.csv`**.
+   Each book shows which fields are source-verified and which need manual
+   review. For details, open the Git-ignored
+   **`reports/metadata-batch-candidates.json`**. Source-site structural
+   changes, blocked pages, mismatched titles/authors and absent fields are
+   left unresolved, not guessed.
+3. Choose **6: Review individually** to inspect and approve book by book,
+   **or 7: Approve all verified** after reviewing the JSON/CSV. Option 7
+   still requires a typed count-specific confirmation. Neither option writes
+   to Hugging Face. All approvals are stored in
+   `reports/metadata-batch-approvals.json`, tied to the current source
+   candidates and dataset revision.
+4. Choose **8: Preview**. The controller validates all approvals against
+   the current *private dataset revision*, matching every book's immutable ID,
+   exact source URL and still-missing fields. The reviewed plan is stored in
+   `reports/metadata-batch-preview.json`; no cloud writes occur.
+5. Choose **9: Apply**. Confirm with the exact phrase `APPLY N` shown
+   on-screen. The controller rejects a stale or altered preview, then makes
+   **one atomic, parent-revision-guarded HF commit** containing only an
+   updated `data/library.json` plus a **private backup of the previous
+   catalogue**, under `backups/metadata-repair/`.
+6. Click **Refresh Cloud Library** in your reader.
+
+All existing EPUBs, archive ZIPs, covers, chapter text, reading progress,
+ratings, reviews and personal tags remain unchanged. This only fixes the
+reader's indexed source metadata; older EPUBs and ZIPs are not rewritten.
+
+**If a page or field is unresolved:** verify the source manually and use
+the one-book repair (options 2–4) for that novel. No unverifiable metadata
+is automatically inserted. In particular, no source status is inferred from
+chapter count or historical upload completion.
+
+**Important privacy rule:** the public code repository and its CI must never
+contain real catalogue exports, novel titles from your private dataset,
+metadata proposals, notes or tokens. Keep the generated reports and repair
+JSON exclusively in the local, Git-ignored `reports/` directory.
+
+### Advanced batch commands
+
+```powershell
+py -m taiyou_storage.metadata_batch discover
+py -m taiyou_storage.metadata_batch review
+py -m taiyou_storage.metadata_batch review --approve-all
+py -m taiyou_storage.metadata_batch preview
+py -m taiyou_storage.metadata_batch apply
+```
+
+Discovery normally finds all currently incomplete catalogue entries itself.
+If you want to restrict it to a **fresh** audit CSV, put the CSV in
+`reports/missing-source-metadata.csv` and use:
+
+```powershell
+py -m taiyou_storage.metadata_batch discover --targets reports/missing-source-metadata.csv
+```
+
+The CSV is used **only to select existing books**, never as authority for
+their identity or metadata values. Discovery refuses to replace an existing
+batch candidate/approval/preview. Back up and remove those local files before
+starting a new batch, so earlier decisions cannot be silently lost.
+
+The parser currently recognises public FreeWebNovel and NovelFull book pages.
+Scribble Hub support is conservative and a missing/moved/access-blocked page
+remains unresolved. Exact title and author must be verified, even if genres
+appear in a sidebar. A structurally unsupported page never produces an
+automatic repair candidate.
+
 ## First: audit your library (read only)
 
 1. Run `18_repair_novel_metadata.cmd` and choose **1**.
