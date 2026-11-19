@@ -13,6 +13,7 @@ import io
 import json
 import os
 from pathlib import Path, PurePosixPath
+import re
 import sys
 from urllib.parse import urlsplit, urlunsplit
 import zipfile
@@ -42,6 +43,10 @@ class Cover:
     extension: str
     data: bytes
     digest: str
+    # Optional explicit identity for works whose cover is hosted somewhere
+    # other than the novel's original catalogue source URL.
+    book_id: str = ""
+    author: str = ""
 
 
 def source_key(value: str) -> str:
@@ -152,8 +157,15 @@ def _parse_zip(z: zipfile.ZipFile, nested: bool = False) -> list[Cover]:
             raise CoverError("Images in archive exceed 350 MiB in total")
         image = z.read(entry)
         check_image(image, extension)
+        book_id = record.get("book_id", "")
+        author = record.get("author", "")
+        if not isinstance(book_id, str) or (book_id and not re.fullmatch(r"[a-f0-9]{24}", book_id)):
+            raise CoverError(f"Entry {n}: invalid book_id; expected 24 lowercase hexadecimal characters")
+        if not isinstance(author, str):
+            raise CoverError(f"Entry {n}: author must be a string")
         output.append(Cover(title.strip(), str(website or "").strip(), url.strip(),
-                            filename, extension, image, hashlib.sha256(image).hexdigest()))
+                            filename, extension, image, hashlib.sha256(image).hexdigest(),
+                            book_id, author.strip()))
     return output
 
 
@@ -179,6 +191,23 @@ def match_book(books: list[dict], cover: Cover) -> tuple[dict | None, str]:
     by_url = [b for b in books if source_key(b["metadata"].get("sourceUrl", "")) == url]
     by_title = [b for b in books if normalized_title(b["metadata"].get("title", "")) ==
                 normalized_title(cover.title)]
+    if cover.book_id:
+        # Explicit identity must independently agree on the stable ID, title
+        # AND author. A cover image may come from another website, but must
+        # never silently redirect to an unrelated novel.
+        by_id = [b for b in books if b.get("id") == cover.book_id]
+        if len(by_id) != 1:
+            raise CoverError("CONFLICT: explicit book_id is missing or ambiguous in the catalogue")
+        matched = by_id[0]
+        if normalized_title(matched["metadata"].get("title", "")) != normalized_title(cover.title):
+            raise CoverError("CONFLICT: explicit book_id and cover title disagree")
+        if (not cover.author or
+                normalized_title(matched["metadata"].get("author", "")) !=
+                normalized_title(cover.author)):
+            raise CoverError("CONFLICT: explicit book_id requires a matching author")
+        if any(b["id"] != matched["id"] for b in by_url):
+            raise CoverError("CONFLICT: cover source URL belongs to a different novel")
+        return matched, "explicit-id-title-author"
     if len(by_url) > 1:
         raise CoverError("CONFLICT: source URL belongs to multiple catalogue records")
     if len(by_url) == 1:

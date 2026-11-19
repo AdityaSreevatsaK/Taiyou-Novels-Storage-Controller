@@ -154,7 +154,33 @@ py -m taiyou_storage.covers "C:\Downloads\Downloaded_Covers.zip"                
 py -m taiyou_storage.covers "C:\Downloads\Downloaded_Covers.zip" --interactive   # Preview and confirm
 ```
 
-Covers are linked only to **existing** novels. Matching prefers the source URL; ambiguous titles block updates. Images follow each book's **catalogue-declared folder**, which may be readable or legacy; the catalogue's `metadata.coverPath` is updated. The uploader does not delete covers of another extension, create books or alter EPUBs/ZIPs.
+Covers are linked only to **existing** novels. Matching normally prefers the source URL; ambiguous titles block updates. Images follow each book's **catalogue-declared folder**, which may be readable or legacy; the catalogue's `metadata.coverPath` is updated. The uploader does not delete covers of another extension, create books or alter EPUBs/ZIPs.
+
+**When the cover is sourced from a different website:** An optional `book_id`
+and `author` can be added to that cover's `covers_manifest.json` entry.
+Both must match the existing catalogue record, along with its exact
+normalised title. For example:
+
+```json
+{
+  "covers": [{
+    "title": "The Adventurous Gamer Ninja - Daichi Hekima",
+    "author": "MonkWithAPen",
+    "book_id": "0d60ae62a188f407fbf51956",
+    "website": "Royal Road",
+    "source_url": "https://www.royalroad.com/fiction/51624/the-adventurous-gamer-ninja-daichi-hekima",
+    "cover_file": "cover.jpg"
+  }]
+}
+```
+
+The `source_url` in this entry represents **where the cover was found**.
+It does not replace the novel's `metadata.sourceUrl` in the private catalogue.
+When an explicit ID is supplied, the uploader checks ID, title and author
+and rejects URLs belonging to another catalogue entry. A failure remains a
+CONFLICT and performs **no writes**. If the preview reports a conflict, inspect
+the `reason` column in `reports/cover-upload-plan.csv` before continuing.
+
 
 - Default: **20 covers per atomic batch** (configurable up to 40). The cover files and catalogue changes commit together.
 - If a later batch fails, earlier committed batches remain. **Re-run the same ZIP** to skip already completed covers and resume.
