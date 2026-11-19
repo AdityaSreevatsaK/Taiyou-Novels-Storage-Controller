@@ -9,12 +9,14 @@ from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from io import BytesIO
+from html.parser import HTMLParser
+import posixpath
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import re
 import unicodedata
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import unquote, urlsplit, urlunsplit
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -163,6 +165,7 @@ def inspect_archive(path: Path) -> dict:
             details = chapter_positions(records, names, complete=explicit_complete)
         details["embedded_epub_count"] = len(embedded)
         details["embedded_epub_sha256"] = epub_digest
+        details["explicit_complete"] = explicit_complete if matches else False
         return details
 
 def validate_epub(path: Path) -> None:
@@ -180,6 +183,102 @@ def validate_epub(path: Path) -> None:
         opf = entry.get("full-path") if entry is not None else None
         if not opf or opf not in names:
             raise ValueError("EPUB package document missing")
+
+
+
+class _VisibleChapterText(HTMLParser):
+    """Count meaningful body text without mistaking navigation/script for prose."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.body = 0
+        self.skip = 0
+        self.parts = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "body":
+            self.body += 1
+        elif tag in {"script", "style", "nav"}:
+            self.skip += 1
+
+    def handle_endtag(self, tag):
+        if tag == "body" and self.body:
+            self.body -= 1
+        elif tag in {"script", "style", "nav"} and self.skip:
+            self.skip -= 1
+
+    def handle_data(self, data):
+        if self.body and not self.skip:
+            self.parts.append(data)
+
+    def text(self) -> str:
+        return " ".join(" ".join(self.parts).split())
+
+
+def verified_epub_spine_count(path: Path, expected_count: int) -> int:
+    """Conservatively verify one substantial, distinct EPUB spine section per chapter.
+
+    A matching count is independent proof the EPUB has readable chapter
+    sections, not proof the ZIP's missing standalone text files exist or that
+    the final published chapter is present. Return 0 for ambiguous layouts.
+    """
+    if not isinstance(expected_count, int) or not 1 <= expected_count <= 100_000:
+        return 0
+    try:
+        with zipfile.ZipFile(path) as epub:
+            validate_zip_budget(epub, epub=True)
+            root = ET.fromstring(epub.read("META-INF/container.xml"))
+            rootfile = next((node for node in root.iter()
+                             if node.tag.rsplit("}", 1)[-1] == "rootfile"), None)
+            opf = rootfile.get("full-path") if rootfile is not None else None
+            if not opf or opf not in epub.namelist():
+                return 0
+            if epub.getinfo(opf).file_size > 8 * 1024 * 1024:
+                return 0
+            package = ET.fromstring(epub.read(opf))
+            manifest = {}
+            spine = []
+            for node in package.iter():
+                tag = node.tag.rsplit("}", 1)[-1]
+                if tag == "item" and node.get("id"):
+                    manifest[node.get("id")] = (
+                        node.get("href"), node.get("media-type", ""),
+                        node.get("properties", ""))
+                elif tag == "itemref" and node.get("linear", "yes") != "no":
+                    spine.append(node.get("idref"))
+            if len(spine) > expected_count + 2:
+                return 0
+            sections = []
+            for itemref in spine:
+                href, media, props = manifest.get(itemref, (None, "", ""))
+                if not href:
+                    return 0
+                if "nav" in props.split():
+                    continue
+                if media not in {"application/xhtml+xml", "text/html"}:
+                    return 0
+                href = unquote(href.split("#", 1)[0])
+                name = posixpath.normpath(
+                    posixpath.join(posixpath.dirname(opf), href))
+                if (name.startswith("/") or name == ".." or
+                        name.startswith("../") or
+                        name not in epub.namelist()):
+                    return 0
+                member = epub.getinfo(name)
+                if not 0 < member.file_size <= 8 * 1024 * 1024:
+                    return 0
+                reader = _VisibleChapterText()
+                reader.feed(epub.read(name).decode("utf-8-sig"))
+                content = reader.text()
+                if len(content) < 120:
+                    return 0
+                sections.append(hashlib.sha256(content.encode()).digest())
+            if len(sections) != expected_count or len(set(sections)) != expected_count:
+                return 0
+            return len(sections)
+    except (KeyError, OSError, ValueError, UnicodeError, ET.ParseError,
+            zipfile.BadZipFile, TypeError):
+        return 0
 
 
 def valid_image(data: bytes, suffix: str) -> bool:
@@ -460,10 +559,42 @@ def inspect_book(book: dict, files: dict, revision: str, backend: HFReadOnly,
                         "duplicate_positions": details.get("duplicates", []),
                         "verification_status": details["status"],
                         "verification_reason": details.get("reason", "")})
-            if details["status"] == "INCOMPLETE":
+            # A ZIP can carry a chapters.json index but store the readable
+            # chapters only in source.epub. Missing standalone text files are
+            # not evidence that EPUB chapters are missing. Escalate genuine
+            # gaps, duplicate positions, malformed records or mismatched EPUBs.
+            archive_only = (
+                details["status"] == "INCOMPLETE"
+                and details.get("manifest_entries", 0) > 0
+                and details.get("absent_files") == details.get("manifest_entries")
+                and details.get("count") == 0
+                and not details.get("missing")
+                and not details.get("duplicates")
+                and not details.get("malformed")
+                and epub_valid
+                and details.get("embedded_epub_count") == 1
+                and details.get("embedded_epub_sha256") == row["epub_sha256"]
+            )
+            checked = (verified_epub_spine_count(
+                epub_path, details["manifest_entries"])
+                if archive_only else 0)
+            if checked:
+                row["stored_chapter_count"] = checked
+                row["verification_status"] = "VERIFIED_RANGE"
+                row["verification_reason"] = (
+                    f"{checked} readable, distinct EPUB spine chapters verified; "
+                    f"original ZIP chapters.json references {checked} "
+                    "unavailable standalone text files; end-of-novel "
+                    "completion not established")
+                issues.append(_issue(
+                    ident, "ARCHIVE_CHAPTER_REFERENCES_UNRESOLVED", "LOW",
+                    row["verification_reason"],
+                    "Keep the working EPUB and original ZIP. Optional archive "
+                    "reference repair only; no novel re-download required"))
+            elif details["status"] == "INCOMPLETE":
                 issues.append(_issue(ident, "INCOMPLETE_CHAPTERS", "HIGH",
                                      row["verification_reason"] + "; gaps=" + str(row["missing_chapters"]),
-                                     "Re-download the missing chapter positions and verify files"))
+                                     "Verify chapter contents, positions and original archive before repairing"))
             if details["status"] == "UNVERIFIED":
                 issues.append(_issue(ident, "CHAPTER_COVERAGE_UNKNOWN", "LOW",
                                      row["verification_reason"], "Obtain verified chapter manifest"))
@@ -542,7 +673,7 @@ def scan(backend: HFReadOnly, mode: str = "manifest", cache_root: Path | None = 
                                 "Repair the catalogue record")])
         cached = None
         if cache_root is not None and mode == "deep":
-            fingerprint = hashlib.sha256(("inspection-v3-cover-listing|" + snapshot.revision + "|" + ident + "|" +
+            fingerprint = hashlib.sha256(("inspection-v4-epub-spine|" + snapshot.revision + "|" + ident + "|" +
                                            json.dumps(item, sort_keys=True, ensure_ascii=False)).encode()).hexdigest()
             cached = cache_root / snapshot.revision / (fingerprint + ".json")
             if cached.exists():

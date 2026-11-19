@@ -45,9 +45,22 @@ recognised.
 VERIFIED_COMPLETE requires an explicit source manifest completion assertion,
 no missing or repeated positions, and all chapter files verified. Bare-list
 manifests can establish VERIFIED_RANGE, never prove end-of-novel completion.
-INCOMPLETE means a manifest has gaps, duplicate positions, malformed entries
-or missing referenced chapter files. UNVERIFIED means coverage cannot be
-established, for example an older EPUB without chapters.json.
+INCOMPLETE means the chapter manifest has genuine gaps, duplicate
+positions, malformed entries, or missing chapter references that cannot be
+independently resolved. A valid EPUB may store chapters internally without
+standalone text files in the original ZIP. Deep mode now distinguishes this
+layout when all the manifest positions are sequential, the original ZIP
+contains the same verified EPUB, and its spine has exactly one substantial,
+unique, readable XHTML section per listed chapter. In that case the scan
+reports VERIFIED_RANGE (not VERIFIED_COMPLETE) and a LOW-severity
+ARCHIVE_CHAPTER_REFERENCES_UNRESOLVED finding. The original ZIP's references
+are still unresolved, but readable EPUB chapter content has been verified.
+Never rewrite working originals merely to eliminate this diagnostic.
+
+If the EPUB is corrupt, its spine is ambiguous, files differ, or there are
+genuine missing/duplicate chapter positions, the scanner retains the HIGH
+INCOMPLETE_CHAPTERS and/or EPUB_ARCHIVE_MISMATCH warnings. UNVERIFIED means
+coverage cannot be established, for example an older EPUB without chapters.json.
 
 The catalogue chapterCount and a novel's publication status are only hints,
 never proof of available chapter positions. The explicit complete flag is
@@ -60,6 +73,21 @@ MISSING means no usable image found, BROKEN means the referenced image is
 absent or corrupt, and UNVERIFIED means insufficient evidence. Placeholder
 indicators are never accepted as authentic covers. Image authenticity
 cannot always be proven from pixels without trustworthy provenance.
+
+
+**Cache and manifest distinction:** Deep scans use a versioned local cache.
+When the verification rules change, re-running deep mode recomputes findings
+even against the same dataset revision. Fast manifest mode reads existing
+remote inspection sidecars and does not inspect EPUB bytes. Older sidecars
+may still describe the pre-fix ZIP-only check until a separately approved
+sidecar backfill. Prefer `05_verify_integrity.cmd --mode deep` for the
+authoritative recheck; neither scan edits the remote dataset.
+
+**Missing authentic cover:** For one book, download an image from a trusted
+source page, construct a cover ZIP with `covers_manifest.json` and use
+`10_upload_covers.cmd`. The preview must identify the exact novel before
+confirming. This is a cover-only operation; it does not replace EPUBs or
+original ZIPs.
 
 ## Retriever exclusions and privacy
 
