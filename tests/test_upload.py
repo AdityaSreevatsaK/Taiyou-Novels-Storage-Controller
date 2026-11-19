@@ -334,6 +334,64 @@ class UploadTests(unittest.TestCase):
         with self.assertRaisesRegex(UploadError, "expanded data"):
             validate_zip_budget(SimpleNamespace(infolist=lambda: [info]))
 
+    def test_pinned_revision_waits_for_new_commit_to_be_visible(self):
+        from taiyou_storage.upload import _pinned_dataset_info
+        expected = "b" * 40
+        unavailable = RuntimeError("Recently created commit is not indexed")
+        unavailable.response = SimpleNamespace(status_code=404)
+        api = MagicMock()
+        api.dataset_info.side_effect = [
+            unavailable, unavailable, SimpleNamespace(private=True, sha=expected),
+        ]
+        waits = []
+        info = _pinned_dataset_info(
+            api, "owner/private", "token", expected, sleeper=waits.append)
+        self.assertEqual(info.sha, expected)
+        self.assertEqual(waits, [0.5, 1.0])
+        self.assertEqual(api.dataset_info.call_count, 3)
+        for call in api.dataset_info.call_args_list:
+            self.assertEqual(call.kwargs["revision"], expected)
+
+    def test_pinned_revision_refuses_unauthorised_or_unknown_commit(self):
+        from taiyou_storage.upload import _pinned_dataset_info
+        api = MagicMock()
+        api.dataset_info.return_value = SimpleNamespace(
+            private=True, sha="c" * 40)
+        waits = []
+        with patch("taiyou_storage.upload.REVISION_VISIBILITY_DELAYS", (0.5,)):
+            with self.assertRaisesRegex(UploadError, "unexpected SHA"):
+                _pinned_dataset_info(
+                    api, "owner/private", "token", "b" * 40,
+                    sleeper=waits.append)
+        self.assertEqual(waits, [0.5])
+        api.dataset_info.return_value = SimpleNamespace(
+            private=False, sha="b" * 40)
+        with self.assertRaisesRegex(UploadError, "public dataset"):
+            _pinned_dataset_info(
+                api, "owner/private", "token", "b" * 40, sleeper=waits.append)
+
+    def test_external_writer_conflict_stops_without_rebasing(self):
+        from taiyou_storage.upload import apply_item
+        with tempfile.TemporaryDirectory() as d:
+            local = local_tuple(fixture(Path(d)))
+            item = plan([], [local], {}, set())[0]
+            api = MagicMock()
+            api.dataset_info.return_value = SimpleNamespace(
+                private=True, sha="b" * 40)
+            api.list_repo_files.return_value = []
+            conflict = RuntimeError("Concurrent update")
+            conflict.response = SimpleNamespace(status_code=412)
+            api.create_commit.side_effect = conflict
+            with self.assertRaisesRegex(UploadError, "another writer"):
+                apply_item(
+                    api, "owner/private", "token", item,
+                    expected_revision="b" * 40, return_revision=True)
+            api.create_commit.assert_called_once()
+            self.assertEqual(
+                api.create_commit.call_args.kwargs["parent_commit"], "b" * 40)
+            self.assertEqual(
+                api.dataset_info.call_args.kwargs["revision"], "b" * 40)
+
     def test_preview_revision_drift_refuses_to_commit(self):
         from taiyou_storage.upload import apply_item
         with tempfile.TemporaryDirectory() as d:
@@ -341,9 +399,11 @@ class UploadTests(unittest.TestCase):
             item = plan([], [local], {}, set())[0]
             api = MagicMock()
             api.dataset_info.return_value = SimpleNamespace(private=True, sha="b" * 40)
-            with self.assertRaisesRegex(UploadError, "changed since preview"):
-                apply_item(api, "owner/private", "token", item,
-                           expected_revision="a" * 40, return_revision=True)
+            with patch("taiyou_storage.upload.REVISION_VISIBILITY_DELAYS", (0,)), \
+                    patch("taiyou_storage.upload.time.sleep"):
+                with self.assertRaisesRegex(UploadError, "unexpected SHA"):
+                    apply_item(api, "owner/private", "token", item,
+                               expected_revision="a" * 40, return_revision=True)
             api.create_commit.assert_not_called()
 
     def test_changed_local_zip_refuses_commit(self):
