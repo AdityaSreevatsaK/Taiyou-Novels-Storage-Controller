@@ -147,6 +147,78 @@ class CoverTests(unittest.TestCase):
             with self.assertRaises(CoverError):
                 read_covers_zip(target)
 
+    def test_explicit_id_title_author_allows_different_cover_source(self):
+        # Reproduce the Daichi failure: stored source differs from the
+        # cover image website, but the stable ID/title/author all match.
+        from dataclasses import replace
+        ident = "0d60ae62a188f407fbf51956"
+        book = existing(
+            ident, title="The Adventurous Gamer Ninja - Daichi Hekima",
+            url="https://example.org/alternate-novel-listing")
+        book["metadata"]["author"] = "MonkWithAPen"
+        supplied = replace(
+            cover(title=book["metadata"]["title"],
+                  url="https://www.royalroad.com/fiction/51624/the-adventurous-gamer-ninja-daichi-hekima"),
+            book_id=ident, author="MonkWithAPen")
+        found, reason = match_book([book], supplied)
+        self.assertEqual(found["id"], ident)
+        self.assertEqual(reason, "explicit-id-title-author")
+        changes = make_plan([supplied], [book], {}, set())
+        self.assertEqual(changes[0]["status"], "NEW")
+        self.assertEqual(changes[0]["book_id"], ident)
+        self.assertEqual(book["metadata"]["sourceUrl"],
+                         "https://example.org/alternate-novel-listing")
+        self.assertEqual(book["metadata"]["progress"], 29)
+
+    def test_explicit_id_rejects_mismatched_title_or_author(self):
+        from dataclasses import replace
+        book = existing("a" * 24)
+        c = replace(cover(), book_id=book["id"], author="Wrong person")
+        with self.assertRaisesRegex(CoverError, "matching author"):
+            match_book([book], c)
+        c = replace(c, author="Author", title="Different novel")
+        with self.assertRaisesRegex(CoverError, "title disagree"):
+            match_book([book], c)
+        c = replace(c, title=book["metadata"]["title"], book_id="b" * 24)
+        with self.assertRaisesRegex(CoverError, "missing or ambiguous"):
+            match_book([book], c)
+
+    def test_explicit_id_does_not_override_conflicting_source_identity(self):
+        from dataclasses import replace
+        first = existing("a" * 24, url="https://example.org/first")
+        second = existing("b" * 24, url="https://example.org/second",
+                          title="Different novel")
+        c = replace(cover(title=first["metadata"]["title"],
+                          url="https://example.org/second"),
+                    book_id=first["id"], author="Author")
+        with self.assertRaisesRegex(CoverError, "different novel"):
+            match_book([first, second], c)
+
+    def test_manifest_can_include_optional_explicit_id_and_author(self):
+        ident = "0d60ae62a188f407fbf51956"
+        with TemporaryDirectory() as d:
+            path = Path(d) / "covers.zip"
+            archive(path, {
+                "title": "The Adventurous Gamer Ninja - Daichi Hekima",
+                "author": "MonkWithAPen",
+                "book_id": ident,
+                "source_url": "https://www.royalroad.com/fiction/51624/the-adventurous-gamer-ninja-daichi-hekima",
+                "cover_file": "NovelFull/martial-world-deadbeef.png"})
+            parsed = read_covers_zip(path)
+            self.assertEqual(parsed[0].book_id, ident)
+            self.assertEqual(parsed[0].author, "MonkWithAPen")
+
+    def test_manifest_rejects_bad_explicit_id(self):
+        with TemporaryDirectory() as d:
+            path = Path(d) / "covers.zip"
+            archive(path, {
+                "title": "Martial World", "book_id": "not-a-valid-id",
+                "author": "Author",
+                "source_url": "https://novelfull.com/martial-world.html",
+                "cover_file": "NovelFull/martial-world-deadbeef.png"})
+            with self.assertRaisesRegex(CoverError, "invalid book_id"):
+                read_covers_zip(path)
+
     def test_source_url_is_primary(self):
         book = existing("a" * 24, title="Old Martial World")
         found, reason = match_book([book], cover())
