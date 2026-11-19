@@ -202,6 +202,26 @@ class InspectionTests(unittest.TestCase):
             self.assertEqual(result["novels"][0]["cover_status"], "EMBEDDED_ONLY")
             self.assertEqual(result["novels"][0]["verification_status"], "UNVERIFIED")
 
+    def test_missing_source_url_is_not_mistaken_for_missing_bibliography(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            entry = book(source="", cover=False)
+            backend = FixtureBackend(tmp, [entry]).populate(cover=False)
+            result = scan(backend, "deep")
+            self.assertNotIn(
+                "MISSING_METADATA", {issue["code"] for issue in result["issues"]})
+            self.assertEqual(result["novels"][0]["source_url"], "")
+
+    def test_missing_actual_author_is_reported_precisely(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            entry = book(source="", author="Unknown author", cover=False)
+            backend = FixtureBackend(tmp, [entry]).populate(cover=False)
+            result = scan(backend, "quick")
+            matching = [i for i in result["issues"]
+                        if i["code"] == "MISSING_METADATA"]
+            self.assertEqual(len(matching), 1)
+            self.assertIn("author", matching[0]["evidence"])
+            self.assertNotIn("source", matching[0]["evidence"])
+
     def test_listing_only_does_not_claim_validation(self):
         with tempfile.TemporaryDirectory() as tmp:
             backend = FixtureBackend(tmp).populate(complete=True)
