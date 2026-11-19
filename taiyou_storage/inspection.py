@@ -325,9 +325,19 @@ def inspect_book(book: dict, files: dict, revision: str, backend: HFReadOnly,
                              "Repair the catalogue path after verifying the original files"))
         row["cover_reason"] = "Unsafe or malformed catalogue references"
         return row, issues
-    if not title or not meta.get("author") or str(meta.get("author")).casefold() in ("unknown", "unknown author", "n/a") or not source:
-        issues.append(_issue(ident, "MISSING_METADATA", "LOW", "Title or author absent",
-                             "Recover verified source metadata"))
+    # An independent book or imported EPUB need not have a source website.
+    # Missing sourceUrl is not evidence of missing bibliographic metadata.
+    # Keep source_url blank in the report rather than inventing a URL.
+    missing_fields = []
+    if not title.strip():
+        missing_fields.append("title")
+    if not str(meta.get("author") or "").strip() or str(meta.get("author")).strip().casefold() in (
+            "unknown", "unknown author", "n/a"):
+        missing_fields.append("author")
+    if missing_fields:
+        issues.append(_issue(ident, "MISSING_METADATA", "LOW",
+                             "Missing required fields: " + ", ".join(missing_fields),
+                             "Recover verified title/author metadata"))
     if not isinstance(epub, str) or epub not in files:
         issues.append(_issue(ident, "MISSING_EPUB", "CRITICAL", str(epub),
                              "Restore source.epub from a verified backup"))
