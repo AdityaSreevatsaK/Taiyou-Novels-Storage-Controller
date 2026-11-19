@@ -77,13 +77,22 @@ class FakePrivateHub:
         self.commits = []
         self.downloads = []
         self.fail_commit_number = None
+        # Simulate eventually consistent main-branch metadata after commits.
+        self.lag_unpinned_head = False
 
     @property
     def files(self):
         return self.snapshots[self.sha]
 
-    def dataset_info(self, repo, token=None):
+    def dataset_info(self, repo, token=None, revision=None):
         self.assert_repo(repo)
+        if revision is not None:
+            if revision not in self.snapshots:
+                raise AssertionError("Expected commit does not exist")
+            return SimpleNamespace(private=True, sha=revision)
+        if self.lag_unpinned_head and self.commits:
+            # The latest commit exists but the main-head metadata view lags.
+            return SimpleNamespace(private=True, sha="a" * 40)
         return SimpleNamespace(private=True, sha=self.sha)
 
     def assert_repo(self, repo):
@@ -250,6 +259,28 @@ class EndToEndSmokeTests(unittest.TestCase):
                 with zipfile.ZipFile(first) as archive:
                     expected = archive.read("chapters/source.epub")
                 self.assertEqual(hub.files[book_a["epubPath"]], expected)
+
+    def test_bulk_upload_continues_when_hub_head_metadata_lags(self):
+        # The previous implementation stopped after a few successful commits
+        # because it rechecked a stale main HEAD instead of reading the exact
+        # prior create_commit OID. A 6-novel synthetic run must complete.
+        with TemporaryDirectory() as folder, chdir(folder):
+            root = Path(folder)
+            novels = root / "novels"
+            novels.mkdir()
+            for index in range(6):
+                make_novel(
+                    novels, f"novel-{index}.zip", f"Revision Lag Novel {index}",
+                    f"https://novelfull.com/revision-lag-{index}.html")
+            hub = FakePrivateHub(root)
+            hub.lag_unpinned_head = True
+            with fake_cloud(hub):
+                result, output = quiet_run(
+                    upload_main, [str(novels), "--repo", REPO, "--apply"])
+            self.assertEqual(result, 0, output)
+            self.assertEqual(len(hub.commits), 6)
+            self.assertEqual(len(hub.books()), 6)
+            self.assertIn("Changes applied", output)
 
     def test_cover_batches_resume_after_failure_without_duplicate_commits(self):
         with TemporaryDirectory() as folder, chdir(folder):
