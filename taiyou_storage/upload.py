@@ -36,6 +36,42 @@ class UploadError(ValueError):
     pass
 
 
+# Brief, bounded waits for a just-created Hub commit to become readable
+# through the revision-pinned metadata API. Never accept a different SHA.
+REVISION_VISIBILITY_DELAYS = (0.5, 1.0, 2.0, 3.0)
+
+
+def _pinned_dataset_info(api, repo: str, token: str, expected_sha: str,
+                         *, sleeper=time.sleep):
+    """Verify the exact approved commit, not a possibly lagging 'main' view.
+
+    create_commit(parent_commit=expected_sha) remains the final atomic guard:
+    if another writer advances the branch, that write must be rejected.
+    """
+    for attempt in range(len(REVISION_VISIBILITY_DELAYS) + 1):
+        try:
+            info = api.dataset_info(
+                repo, token=token, revision=expected_sha)
+        except Exception as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if (status not in (404, 408, 500, 502, 503, 504)
+                    or attempt == len(REVISION_VISIBILITY_DELAYS)):
+                raise
+        else:
+            if info.private is not True:
+                raise UploadError("Refusing to write to an unverified or public dataset")
+            if info.sha == expected_sha:
+                return info
+            if not info.sha:
+                raise UploadError("Pinned Hugging Face dataset revision was not verified")
+            if attempt == len(REVISION_VISIBILITY_DELAYS):
+                raise UploadError(
+                    "Hugging Face returned an unexpected SHA for the pinned "
+                    "dataset revision. No write made; re-preview the upload plan.")
+        sleeper(REVISION_VISIBILITY_DELAYS[attempt])
+    raise UploadError("Could not verify the expected Hugging Face dataset revision")
+
+
 def validate_zip_budget(z: zipfile.ZipFile, *, epub: bool = False) -> None:
     """Reject pathological archives before any member is decompressed."""
     max_entries = MAX_EPUB_ENTRIES if epub else MAX_ZIP_ENTRIES
@@ -275,12 +311,16 @@ def apply_item(api, repo: str, token: str, item: dict, *,
     """
     from huggingface_hub import CommitOperationAdd, hf_hub_download
     for attempt in range(3 if expected_revision is None else 1):
-        info = api.dataset_info(repo, token=token)
+        # The previous commit's OID is authoritative for this approved batch.
+        # A fresh dataset_info('main') can lag behind recent successful writes.
+        # Read by exact SHA, then let create_commit(parent_commit=sha) enforce
+        # optimistic concurrency on the real remote branch head.
+        info = (_pinned_dataset_info(api, repo, token, expected_revision)
+                if expected_revision is not None
+                else api.dataset_info(repo, token=token))
         if info.private is not True or not info.sha:
             raise UploadError("Refusing to write to an unverified or public dataset")
         sha = info.sha
-        if expected_revision is not None and sha != expected_revision:
-            raise UploadError("Dataset changed since preview; re-run the upload plan")
         files = set(api.list_repo_files(repo_id=repo, repo_type="dataset",
                                         revision=sha, token=token))
         if "data/library.json" in files:
@@ -387,8 +427,14 @@ def apply_item(api, repo: str, token: str, item: dict, *,
                 return status
             except Exception as exc:
                 response = getattr(exc, "response", None)
-                if (expected_revision is None and
-                        getattr(response, "status_code", None) in (409, 412) and attempt < 2):
+                status_code = getattr(response, "status_code", None)
+                if expected_revision is not None and status_code in (409, 412):
+                    raise UploadError(
+                        "The dataset was changed by another writer while "
+                        "uploading. Completed novels are preserved; re-preview "
+                        "before continuing.") from exc
+                if (expected_revision is None and status_code in (409, 412)
+                        and attempt < 2):
                     continue
                 raise
     raise UploadError("Dataset changed repeatedly; no commit was applied")
