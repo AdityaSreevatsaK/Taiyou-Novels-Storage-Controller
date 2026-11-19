@@ -61,6 +61,43 @@ def archive_bytes(positions=(1, 2, 3), *, complete=False, manifest=True, cover=F
     return buffer.getvalue()
 
 
+
+def epub_with_spine_chapters(chapters: int) -> bytes:
+    """Synthetic readable EPUB with one substantial unique XHTML per chapter."""
+    payload = BytesIO()
+    manifest = "".join(
+        f'<item id="c{n}" href="chapter-{n}.xhtml" media-type="application/xhtml+xml"/>'
+        for n in range(1, chapters + 1))
+    spine = "".join(f'<itemref idref="c{n}"/>' for n in range(1, chapters + 1))
+    opf = (f'<package xmlns="http://www.idpf.org/2007/opf">'
+           f'<metadata/><manifest>{manifest}</manifest><spine>{spine}</spine></package>')
+    container = (
+        '<container><rootfiles><rootfile full-path="OEBPS/content.opf"/>'
+        '</rootfiles></container>')
+    with zipfile.ZipFile(payload, "w") as archive:
+        archive.writestr("mimetype", "application/epub+zip")
+        archive.writestr("META-INF/container.xml", container)
+        archive.writestr("OEBPS/content.opf", opf)
+        for n in range(1, chapters + 1):
+            archive.writestr(
+                f"OEBPS/chapter-{n}.xhtml",
+                f"<html><body><h1>Chapter {n}</h1><p>" +
+                (f"This is distinct readable prose from chapter {n}. " * 6) +
+                "</p></body></html>")
+    return payload.getvalue()
+
+
+def archive_with_unresolved_refs(epub_data: bytes, positions=(1, 2, 3)) -> bytes:
+    """Archive holds one EPUB and a manifest pointing to absent text files."""
+    payload = BytesIO()
+    rows = [{"position": n, "file": f"chapters/chapter-{n}.txt"}
+            for n in positions]
+    with zipfile.ZipFile(payload, "w") as archive:
+        archive.writestr("source.epub", epub_data)
+        archive.writestr("chapters.json", json.dumps(rows))
+    return payload.getvalue()
+
+
 def book(ident=IDENT, *, title="Synthetic Book", author="Synthetic Writer",
          source="https://novelfull.com/synthetic.html", cover=True):
     root = f"data/novels/{ident}"
@@ -182,6 +219,65 @@ class InspectionTests(unittest.TestCase):
             report = scan(backend, "deep")
             self.assertIn("EPUB_ARCHIVE_MISMATCH", {i["code"] for i in report["issues"]})
             self.assertEqual(report["novels"][0]["verification_status"], "UNVERIFIED")
+
+    def test_epub_only_chapters_are_readable_not_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            backend = FixtureBackend(tmp, [book(cover=False)])
+            epub = epub_with_spine_chapters(3)
+            prefix = f"data/novels/{IDENT}"
+            backend.add(prefix + "/source.epub", epub)
+            backend.add(prefix + "/original.zip", archive_with_unresolved_refs(epub))
+            report = scan(backend, "deep")
+            row = report["novels"][0]
+            self.assertEqual(row["verification_status"], "VERIFIED_RANGE")
+            self.assertEqual(row["stored_chapter_count"], 3)
+            self.assertIn("standalone text files", row["verification_reason"])
+            findings = {i["code"]: i for i in report["issues"]}
+            self.assertNotIn("INCOMPLETE_CHAPTERS", findings)
+            self.assertIn("ARCHIVE_CHAPTER_REFERENCES_UNRESOLVED", findings)
+            self.assertEqual(
+                findings["ARCHIVE_CHAPTER_REFERENCES_UNRESOLVED"]["severity"], "LOW")
+            self.assertFalse(any(i["severity"] == "HIGH" for i in report["issues"]))
+
+    def test_unverified_spine_does_not_hide_missing_archive_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            backend = FixtureBackend(tmp, [book(cover=False)])
+            prefix = f"data/novels/{IDENT}"
+            epub = epub_with_spine_chapters(2)
+            backend.add(prefix + "/source.epub", epub)
+            backend.add(prefix + "/original.zip",
+                        archive_with_unresolved_refs(epub, (1, 2, 3)))
+            report = scan(backend, "deep")
+            self.assertEqual(report["novels"][0]["verification_status"], "INCOMPLETE")
+            self.assertIn("INCOMPLETE_CHAPTERS",
+                          {i["code"] for i in report["issues"]})
+
+    def test_real_chapter_gaps_still_high_severity_when_epub_readable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            backend = FixtureBackend(tmp, [book(cover=False)])
+            prefix = f"data/novels/{IDENT}"
+            epub = epub_with_spine_chapters(2)
+            backend.add(prefix + "/source.epub", epub)
+            backend.add(prefix + "/original.zip",
+                        archive_with_unresolved_refs(epub, (1, 3)))
+            report = scan(backend, "deep")
+            self.assertIn("INCOMPLETE_CHAPTERS",
+                          {i["code"] for i in report["issues"]})
+            self.assertEqual(report["novels"][0]["missing_chapters"], ["2"])
+
+    def test_mismatched_epub_not_silently_reclassified(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            backend = FixtureBackend(tmp, [book(cover=False)])
+            prefix = f"data/novels/{IDENT}"
+            epub = epub_with_spine_chapters(3)
+            backend.add(prefix + "/source.epub", epub)
+            backend.add(prefix + "/original.zip",
+                        archive_with_unresolved_refs(epub_with_spine_chapters(2)))
+            report = scan(backend, "deep")
+            codes = {i["code"] for i in report["issues"]}
+            self.assertIn("EPUB_ARCHIVE_MISMATCH", codes)
+            self.assertIn("INCOMPLETE_CHAPTERS", codes)
+            self.assertNotIn("ARCHIVE_CHAPTER_REFERENCES_UNRESOLVED", codes)
 
     def test_deep_incomplete_and_corrupt_cover(self):
         with tempfile.TemporaryDirectory() as tmp:
