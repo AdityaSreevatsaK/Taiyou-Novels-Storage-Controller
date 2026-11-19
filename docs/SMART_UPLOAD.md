@@ -32,6 +32,22 @@ titles; inspect previews before applying.
 
 CI is completely offline. No Hugging Face dataset modifications occur during tests.
 
+## Consecutive commit revision checks
+
+For a multi-novel upload, each successful `create_commit` returns an immutable
+commit SHA. The next novel now loads and verifies the dataset **at that exact
+revision**, instead of trusting a possibly delayed `main`-branch SHA response.
+If Hugging Face has not yet indexed that specific commit, the uploader makes
+four short, bounded read-only retries (no repeated writes).
+
+Each actual write still passes `parent_commit` with the exact expected SHA.
+A different writer advancing `main` causes the server to reject the write:
+the uploader stops and asks for a fresh preview. It never silently rebases
+an approved plan or overwrites another writer's changes.
+
+Previously committed novels are preserved if a run stops. Re-run the same
+ZIP set to skip completed items. No local ZIPs are deleted.
+
 ## First upload to a newly recreated Hugging Face dataset
 
 You do not need to manually create `data/library.json`. A newly created **PRIVATE**
