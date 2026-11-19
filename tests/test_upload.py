@@ -116,21 +116,85 @@ class UploadTests(unittest.TestCase):
             api.dataset_info.return_value = SimpleNamespace(
                 private=True, sha="c" * 40)
             api.list_repo_files.return_value = [".gitattributes", "README.md"]
+            captured, staged = {}, {}
+            def check_xet_commit(**kwargs):
+                self.assertEqual(kwargs["parent_commit"], "c" * 40)
+                for op in kwargs["operations"]:
+                    source = op.path_or_fileobj
+                    self.assertIsInstance(source, (str, Path))
+                    self.assertTrue(Path(source).is_file())
+                    captured[op.path_in_repo] = Path(source).read_bytes()
+                    staged[op.path_in_repo] = Path(source)
+                return SimpleNamespace(oid="d" * 40)
+            api.create_commit.side_effect = check_xet_commit
             with patch("huggingface_hub.hf_hub_download") as download:
                 self.assertEqual(apply_item(api, "owner/private", "token", item), "NEW")
                 download.assert_not_called()
             api.create_commit.assert_called_once()
-            kwargs = api.create_commit.call_args.kwargs
-            self.assertEqual(kwargs["parent_commit"], "c" * 40)
-            by_path = {op.path_in_repo: op for op in kwargs["operations"]}
             novel_id = item["id"]
-            self.assertIn(f"data/novels/{novel_id}/source.epub", by_path)
-            self.assertIn(f"data/novels/{novel_id}/original.zip", by_path)
-            self.assertIn(f"data/novels/{novel_id}/inspection-manifest.json", by_path)
-            catalogue = json.loads(by_path["data/library.json"].path_or_fileobj.getvalue())
+            self.assertEqual(captured[f"data/novels/{novel_id}/source.epub"], item["epub"])
+            self.assertEqual(captured[f"data/novels/{novel_id}/original.zip"], local[0].read_bytes())
+            self.assertIn(f"data/novels/{novel_id}/inspection-manifest.json", captured)
+            catalogue = json.loads(captured["data/library.json"])
             self.assertEqual(catalogue["version"], 1)
             self.assertEqual(len(catalogue["books"]), 1)
             self.assertEqual(catalogue["books"][0]["id"], novel_id)
+            self.assertTrue(staged[f"data/novels/{novel_id}/original.zip"].exists(),
+                            "User's original ZIP must not be deleted")
+            for name, path in staged.items():
+                if not name.endswith("/original.zip"):
+                    self.assertFalse(path.exists(), "Staged files must be cleaned after commit")
+
+    def test_xet_staged_sources_are_cleaned_after_failed_commit(self):
+        from taiyou_storage.upload import apply_item
+        with tempfile.TemporaryDirectory() as folder:
+            local = local_tuple(fixture(Path(folder)))
+            item = plan([], [local], {}, set())[0]
+            api = MagicMock()
+            api.dataset_info.return_value = SimpleNamespace(private=True, sha="c" * 40)
+            api.list_repo_files.return_value = []
+            staged = []
+            def fail_commit(**kwargs):
+                for op in kwargs["operations"]:
+                    path = Path(op.path_or_fileobj)
+                    self.assertTrue(path.is_file())
+                    if path != local[0]:
+                        staged.append(path)
+                raise OSError("Synthetic interrupted HF commit")
+            api.create_commit.side_effect = fail_commit
+            with self.assertRaisesRegex(OSError, "Synthetic interrupted"):
+                apply_item(api, "owner/private", "token", item)
+            self.assertEqual(len(staged), 3)
+            self.assertTrue(all(not path.exists() for path in staged))
+            self.assertTrue(local[0].exists(), "Never remove the source archive")
+
+    def test_xet_staged_sources_are_removed_before_revision_conflict_retry(self):
+        from taiyou_storage.upload import apply_item
+        with tempfile.TemporaryDirectory() as folder:
+            local = local_tuple(fixture(Path(folder)))
+            item = plan([], [local], {}, set())[0]
+            api = MagicMock()
+            api.dataset_info.return_value = SimpleNamespace(private=True, sha="c" * 40)
+            api.list_repo_files.return_value = []
+            first_paths = []
+            attempts = []
+            def retry_commit(**kwargs):
+                staged = [Path(op.path_or_fileobj) for op in kwargs["operations"]
+                          if op.path_in_repo != f"{item['directory']}/original.zip"]
+                self.assertTrue(all(path.is_file() for path in staged))
+                attempts.append(staged)
+                if len(attempts) == 1:
+                    first_paths.extend(staged)
+                    failure = RuntimeError("Revision conflict")
+                    failure.response = SimpleNamespace(status_code=409)
+                    raise failure
+                self.assertTrue(all(not path.exists() for path in first_paths))
+                return SimpleNamespace(oid="d" * 40)
+            api.create_commit.side_effect = retry_commit
+            self.assertEqual(apply_item(api, "owner/private", "token", item), "NEW")
+            self.assertEqual(len(attempts), 2)
+            self.assertTrue(all(not path.exists() for group in attempts for path in group))
+            self.assertTrue(local[0].exists())
 
     def test_missing_catalogue_with_remote_data_blocks_first_commit(self):
         from taiyou_storage.upload import apply_item
