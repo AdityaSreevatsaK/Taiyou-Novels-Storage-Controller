@@ -6,6 +6,14 @@ preview and confirm in one process, or `--apply` for an explicitly authorised
 non-interactive write. Pass `--repo OWNER/PRIVATE-DATASET` to change target.
 
 The controller:
+The bulk uploader now passes on-disk paths to Hugging Face for **all** commit
+operations. Generated EPUB, catalogue and inspection-manifest files are staged
+temporarily per novel commit; the original ZIP is used directly from disk.
+This avoids the `BytesIO`-triggered Xet-to-HTTP fallback. Temporary staging
+files are removed after success, failure or a revision-conflict retry. It does
+not change the existing approval, private-repository and parent-revision checks.
+Xet availability still depends on Hugging Face and your local environment.
+
 - Validates ZIP CRC, EPUB structure, JSON, entry counts, expanded-size budgets and file-size limits.
 - Matches existing catalogue entries by exact EPUB hash-derived ID, or by unique normalised title **and** author.
 - Preserves an existing novel ID when EPUB content changes.

@@ -94,6 +94,12 @@ instructions and JSON format. This is independent of the historical genre
 repair tool and does not download chapters.
 
 ## Import novel ZIPs
+The Python bulk uploader uses temporary local files for the generated EPUB,
+catalogue and inspection manifest, alongside the existing ZIP on disk, so
+Hugging Face Xet can use filesystem-backed uploads instead of falling back to
+HTTP for in-memory buffers. Temporary files are removed after each commit,
+including failures. Uploads remain revision-guarded and require approval.
+
 
 Each ZIP must contain exactly one valid **`source.epub`**. Optional `metadata.json`, `chapters.json` and chapter text files may sit alongside it or in a subfolder (such as `chapters/source.epub`).
 
