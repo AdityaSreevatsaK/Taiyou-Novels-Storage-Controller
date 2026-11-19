@@ -9,6 +9,7 @@ RETAINED = {
     "ci.yml", "hf-inspect.yml", "hf-private-backup.yml",
     "hf-private-reports.yml", "hf-restore-genres.yml",
     "hf-upload-covers-artifact.yml", "release.yml",
+    "repair-104-novel-covers-20261119.yml",
 }
 RETIRED = {
     "hf-migrate-readable-folders.yml",
