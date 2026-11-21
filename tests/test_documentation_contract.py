@@ -61,7 +61,7 @@ class DocumentationContractTests(unittest.TestCase):
         roadmap = (ROOT / "docs/ROADMAP.md").read_text(encoding="utf-8")
         for placeholder in ("08_restore_novel.cmd", "09_delete_novel.cmd"):
             self.assertIn(placeholder, roadmap)
-        self.assertIn("Not implemented", (ROOT / "AGENTS.md").read_text(encoding="utf-8"))
+        self.assertIn("placeholders", (ROOT / "AGENTS.md").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
