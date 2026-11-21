@@ -43,5 +43,5 @@ if "%choice%"=="15" call "%~dp015_library_health_report.cmd"
 if "%choice%"=="16" call "%~dp016_backfill_inspection_manifests.cmd"
 if "%choice%"=="17" call "%~dp017_cleanup_inspection_downloads.cmd"
 if "%choice%"=="18" call "%~dp018_repair_novel_metadata.cmd"
-if "%choice%"=="0" exit /b 0
+if "%choice%"=="0" (echo Controller closed. No files changed. & exit /b 0)
 goto menu
