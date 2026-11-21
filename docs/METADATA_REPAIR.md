@@ -5,6 +5,12 @@ This tool works only with your **PRIVATE** Hugging Face dataset, and never
 replaces any EPUB, original ZIP, cover, reading progress, personal tags,
 ratings, reviews, collections or other personal metadata.
 
+## Current publication-status support
+
+The current implementation accepts canonical source publication statuses **`Completed`** and **`Ongoing`** only. The public source parser recognises a limited set of aliases for those two values. Canonical **`Hiatus`** and **`Dropped`** support is still open in [issue #46](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/46); do not assume these values are accepted by the current CLI or imported research validator.
+
+Publication status describes the source novel, not the reader's personal completion state. Never infer it from chapter count, EPUB contents, progress, `completedAt`, genres or an unverified listing. The issue is a code/contract task and does not authorise changing any production novel's status.
+
 ## Use an existing research JSON for multiple novels
 
 If you already have a metadata research package, for example the file
