@@ -173,7 +173,7 @@ def remote_backup(api, backup_repo: str, token: str, *, source_repo: str = DEFAU
         # same content. We refuse even if the size happens to match.
         import hashlib
         git_blob = hashlib.sha1(
-            f"blob {len(data)}\\0".encode("ascii") + data).hexdigest()
+            f"blob {len(data)}".encode("ascii") + bytes([0]) + data).hexdigest()
         expected = RemoteIdentity(size=len(data), blob_id=git_blob)
         if not _identity_match(expected, existing):
             raise ActionError("Conflicting private completion receipt")
