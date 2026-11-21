@@ -18,6 +18,7 @@ from pathlib import Path
 import sys
 import time
 
+from .console_summary import print_summary
 from .core import DEFAULT_REPO, validate_catalogue, write_csv
 from .metadata_repair import (
     FIELDS, MetadataRepairError, _load_private_catalogue,
@@ -363,13 +364,13 @@ def main(argv=None) -> int:
         ready = sum(x["state"] == "SOURCE_VERIFIED" for x in doc["items"])
         research_count = sum(x["state"] == "RESEARCH_REVIEW" for x in doc["items"])
         unresolved = sum(bool(x["unresolved"]) for x in doc["items"])
-        print(json.dumps({
-            "novels_checked": len(rows), "novels_with_verified_fields": ready,
-            "imported_research_needing_approval": research_count,
-            "novels_with_unresolved_fields": unresolved, "mode": "READ ONLY",
-        }, sort_keys=True))
-        print("Local review CSV:", REVIEW_CSV)
-        print("Local proposed source fields:", CANDIDATES)
+        print_summary("Source metadata discovery", {
+            "Novels checked": len(rows),
+            "Novels with verified fields": ready,
+            "Research requiring approval": research_count,
+            "Novels with unresolved fields": unresolved,
+        }, reports=[_report_path(REVIEW_CSV), _report_path(CANDIDATES)],
+            note="Read-only. Review candidates before approving.", status="COMPLETED")
         return 0
     if args.action == "review":
         return review_candidates(args.repo, revision, approve_all=args.approve_all)
@@ -383,9 +384,11 @@ def main(argv=None) -> int:
             "approvals_sha256": approvals_hash,
             "changes": changes,
         })
-        print("PREVIEW ONLY. Approved novels:", len(changes))
-        print("Fields to add:", sum(len(item["fields"]) for item in changes))
-        print("No HF data changed. Review local preview JSON before Apply.")
+        print_summary("Batch metadata repair preview", {
+            "Approved novels": len(changes),
+            "Fields to add": sum(len(item["fields"]) for item in changes),
+        }, reports=[_report_path(PREVIEW)],
+            note="No HF changes. Review private preview before applying.", status="PREVIEW")
         return 0
     prior, _ = _read_json(PREVIEW)
     if (prior.get("version") != 1 or prior.get("dataset") != args.repo
@@ -417,8 +420,11 @@ def main(argv=None) -> int:
         commit_message="Backfill reviewed source metadata for multiple existing novels",
     )
     PREVIEW.unlink(missing_ok=True)
-    print("PRIVATE catalogue-only commit complete. Novels updated:", len(changes))
-    print("Pre-change catalogue backed up in the same HF revision.")
+    print_summary("Batch metadata repair completed", {
+        "Novels updated": len(changes),
+        "Pre-change catalogue backup": "Saved privately",
+        "Commit count": 1,
+    }, note="No EPUB, ZIP, cover or personal metadata changes.")
     return 0
 
 
