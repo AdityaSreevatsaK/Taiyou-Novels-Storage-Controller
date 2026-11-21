@@ -20,6 +20,7 @@ import sys
 from urllib.parse import urlsplit
 
 from .core import DEFAULT_REPO, validate_catalogue, write_csv
+from .console_summary import print_summary
 
 REPORT_ROOT = Path("reports")
 DEFAULT_INPUT = REPORT_ROOT / "metadata-repair.json"
@@ -253,9 +254,11 @@ def main(argv=None) -> int:
         write_csv(target, rows,
                   ["id", "title", "author", "source_url", "missing_fields"])
         # Only numeric counts reach stdout. The CSV is local, Git-ignored.
-        print(json.dumps({"mode": "READ ONLY", **counts}, sort_keys=True))
-        if os.environ.get("GITHUB_ACTIONS", "").casefold() != "true":
-            print("Local missing-metadata report:", target)
+        reports = ([target] if os.environ.get("GITHUB_ACTIONS", "").casefold() != "true"
+                   else [])
+        print_summary("Source metadata audit", counts, reports=reports,
+                      note="Read-only. Source metadata is not modified.",
+                      status="COMPLETED")
         return 0
     if args.action == "prepare":
         patch = _local_prepare(catalogue)
@@ -264,8 +267,9 @@ def main(argv=None) -> int:
             raise MetadataRepairError("A repair draft already exists. Move/delete it after backup before preparing another.")
         plan_repair(catalogue, patch)
         _save_private_json(target, patch)
-        print("Repair draft saved to", target)
-        print("Run Preview before any Apply. No cloud changes made.")
+        print_summary("Source metadata draft prepared",
+                      {"Draft created": "Yes"}, reports=[target],
+                      note="Preview is required before any apply. Cloud unchanged.")
         return 0
     patch, payload = _load_patch(args.input)
     updated, changed, book = plan_repair(catalogue, patch)
@@ -277,9 +281,11 @@ def main(argv=None) -> int:
             "patch_sha256": fingerprint, "id": patch["id"],
             "fields_to_add": changed,
         })
-        print("READ-ONLY preview of:", book["title"])
-        print("New source fields:", ", ".join(changed) if changed else "(none)")
-        print("No EPUB, ZIP, cover, personal field or HF data changed.")
+        print_summary("Source metadata repair preview", {
+            "Novel": book["title"],
+            "Fields to add": ", ".join(changed) if changed else "(none)",
+        }, reports=[preview_file], note="Read-only; archives, covers and personal data unchanged.",
+            status="PREVIEW")
         return 0
     if not preview_file.exists():
         raise MetadataRepairError("Run Preview first. A matching preview is mandatory.")
@@ -316,8 +322,11 @@ def main(argv=None) -> int:
         commit_message="Add verified source metadata to one private novel",
     )
     preview_file.unlink(missing_ok=True)
-    print("Committed catalogue repair with PRIVATE original-catalogue backup.")
-    print("Novel chapters, archives, EPUB, covers and personal metadata unchanged.")
+    print_summary("Source metadata repair completed", {
+        "Novels updated": 1,
+        "Fields added": len(changed),
+        "Private catalogue backup": "Created",
+    }, note="EPUBs, ZIPs, covers and personal metadata unchanged.")
     return 0
 
 

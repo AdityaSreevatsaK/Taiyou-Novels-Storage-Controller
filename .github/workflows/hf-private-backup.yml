@@ -50,12 +50,10 @@ jobs:
             echo "::error::Configure HF_STORAGE_CONTROLLER_TOKEN in Actions secrets."
             exit 1
           fi
-          if ! python -m taiyou_storage.actions backup \
-            --backup-repo "$BACKUP_REPO" --mode "$BACKUP_MODE" >"$RUNNER_TEMP/private-backup.log" 2>&1; then
+          if ! python -m taiyou_storage.github_output --task backup --mode apply -- \
+            python -m taiyou_storage.actions backup \
+            --backup-repo "$BACKUP_REPO" --mode "$BACKUP_MODE"; then
             echo "::error::Private HF backup did not complete. No source files were deleted; retry the same mode after reviewing credentials and destination."
             exit 1
           fi
-          # This output contains numeric counts only; no filenames, titles,
-          # source URLs or novel bytes may be printed in public CI logs.
-          grep -E '^(Source files|Objects copied|Previously verified objects reused|Snapshot verified|Full novel downloads): [0-9]+$' "$RUNNER_TEMP/private-backup.log" || true
-          echo "Private backup operation completed."
+          # The output wrapper publishes only allowlisted numeric metrics.

@@ -36,7 +36,7 @@ jobs:
           HF_HUB_DISABLE_TELEMETRY: "1"
         run: |
           set -euo pipefail
-          python -m taiyou_storage.cloud_readiness
+          python -m taiyou_storage.github_output --task readiness --mode verify -- python -m taiyou_storage.cloud_readiness
       - name: Verify quick catalogue and storage audit (no novel downloads)
         shell: bash
         env:
@@ -45,4 +45,4 @@ jobs:
           HF_HUB_DISABLE_TELEMETRY: "1"
         run: |
           set -euo pipefail
-          python -m taiyou_storage.github_checks --mode quick
+          python -m taiyou_storage.github_output --task inspection --mode verify -- python -m taiyou_storage.github_checks --mode quick

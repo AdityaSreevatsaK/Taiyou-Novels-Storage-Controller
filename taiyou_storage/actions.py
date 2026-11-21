@@ -21,6 +21,7 @@ import sys
 import tempfile
 
 from .core import DEFAULT_REPO, normalized_title, validate_catalogue
+from .console_summary import print_summary
 
 
 class ActionError(ValueError):
@@ -188,8 +189,10 @@ def copy_to_private_backup(api, backup_repo: str, token: str,
             token=token)).read_bytes()
         if remote_manifest != (root / "manifest.json").read_bytes():
             raise ActionError("Private backup manifest verification failed")
-    print(f"PRIVATE BACKUP VERIFIED: {len(paths)} files, source revision {revision}", flush=True)
-    print("Backup is saved only in a PRIVATE Hugging Face dataset.")
+    print_summary("Private full-checksum backup completed", {
+        "Source files": len(paths),
+        "Snapshot verified": 1,
+    }, note="Verification was run on the ephemeral cloud runner; backup remains private.")
 
 
 def report_to_private_backup(api, backup_repo: str, token: str) -> None:
@@ -226,8 +229,10 @@ def report_to_private_backup(api, backup_repo: str, token: str) -> None:
                               path_or_fileobj=io.BytesIO(catalogue)),
                       ],
                       commit_message=f"Private storage reports for {revision[:12]}")
-    print(f"PRIVATE reports saved: {len(listing)} book records, {len(collisions)} title conflicts.")
-    print("Open the backup dataset to view names and details; none are posted in public artifacts.")
+    print_summary("Private reports completed", {
+        "Novels reported": len(listing),
+        "Title conflicts reported": len(collisions),
+    }, note="Detailed reports saved only in the PRIVATE backup dataset.")
 
 
 def main(argv=None) -> int:
@@ -251,16 +256,16 @@ def main(argv=None) -> int:
         api = HfApi()
         if args.action == "inspect":
             revision, counts = inspect(api, token)
-            for key, number in counts.items():
-                print(f"{key}: {number}")
+            print_summary("Private library inventory", counts,
+                          note="Metadata-only listing; no remote writes.")
         elif args.action == "report":
             report_to_private_backup(api, args.backup_repo, token)
         elif args.action == "backup":
             if args.mode == "remote-first":
                 from .remote_backup import remote_backup
                 counts = remote_backup(api, args.backup_repo, token)
-                for label, count in counts.items():
-                    print(f"{label}: {count}")
+                print_summary("Remote-first private backup completed", counts,
+                              note="Source dataset unchanged; backup written privately.")
             else:
                 revision, paths = inventory(api, token)
                 copy_to_private_backup(api, args.backup_repo, token, revision, paths)

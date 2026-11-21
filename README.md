@@ -59,6 +59,10 @@ GitHub Actions logs show counts only, never novel titles, private paths or repor
 
 Browse the [**documentation index**](docs/README.md) for migration history, genre repair and release procedures.
 
+## Output and reports
+
+Windows commands now show a short start, numeric summary, and clear end status. GitHub Actions publish a counts-only Markdown summary, keeping detailed private logs off the public workflow console. See [Output conventions](docs/OUTPUT_CONVENTIONS.md).
+
 ## Development
 
 ```powershell

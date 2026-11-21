@@ -148,7 +148,7 @@ class RemoteBackupTests(unittest.TestCase):
             with redirect_stdout(buffer):
                 code = main(["backup", "--backup-repo", BACKUP])
         self.assertEqual(code, 0)
-        self.assertIn("Snapshot verified: 1", buffer.getvalue())
+        self.assertRegex(buffer.getvalue(), r"Snapshot verified[ ]+: 1")
         self.assertNotIn("data/novels/", buffer.getvalue())
 
 

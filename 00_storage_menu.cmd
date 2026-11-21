@@ -3,9 +3,12 @@ setlocal
 cd /d "%~dp0"
 :menu
 cls
+echo ====================================================
 echo Taiyou Novels Storage Controller
+echo Local commands ^| private HF data remains protected
+echo ====================================================
 echo.
-echo 1. Smart bulk upload ZIP novels (verified deduplication)
+echo 1. Upload novels and covers
 echo 2. Download all ZIPs
 echo 3. List novels
 echo 4. Detect title conflicts
@@ -13,14 +16,14 @@ echo 5. Verify library integrity (read-only)
 echo 6. Local sync status
 echo 7. Back up catalogue
 echo 10. Upload novel cover images (ZIP)
-echo 11. CLEAR private HF data (FULL BACKUP FIRST)
+echo 11. RESET private HF data (DANGEROUS, full backup required)
 echo 12. Export chapter inventory
 echo 13. Audit missing covers
 echo 14. Compare Novel Retriever inventory
 echo 15. Library health dashboard
 echo 16. Backfill remote inspection manifests (preview or approved upload)
-echo 17. Clean up local inspection downloads (preview or delete)
-echo 18. Audit or repair one novel's source metadata (safe preview/backup)
+echo 17. Clean local inspection cache
+echo 18. Audit or repair novel metadata
 echo 0. Exit
 echo.
 set /p "choice=Choice: "
@@ -40,5 +43,5 @@ if "%choice%"=="15" call "%~dp015_library_health_report.cmd"
 if "%choice%"=="16" call "%~dp016_backfill_inspection_manifests.cmd"
 if "%choice%"=="17" call "%~dp017_cleanup_inspection_downloads.cmd"
 if "%choice%"=="18" call "%~dp018_repair_novel_metadata.cmd"
-if "%choice%"=="0" exit /b 0
+if "%choice%"=="0" (echo Controller closed. No files changed. & exit /b 0)
 goto menu

@@ -35,4 +35,6 @@ jobs:
         run: |
           args=()
           if [ '${{ inputs.apply_changes }}' = 'true' ]; then args+=(--apply); fi
-          python -m taiyou_storage.genre_repair "${args[@]}"
+          mode=preview
+          if [ '${{ inputs.apply_changes }}' = 'true' ]; then mode=apply; fi
+          python -m taiyou_storage.github_output --task genre-repair --mode "$mode" -- python -m taiyou_storage.genre_repair "${args[@]}"

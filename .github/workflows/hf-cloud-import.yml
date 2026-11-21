@@ -73,11 +73,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if ! python -m taiyou_storage.cloud_import incoming >"$RUNNER_TEMP/private-bundle-check.log" 2>&1; then
+          if ! python -m taiyou_storage.github_output --task bundle-check --mode verify -- python -m taiyou_storage.cloud_import incoming; then
             echo "::error::Completed export failed checksum or structural verification. No uploads were attempted."
             exit 1
           fi
-          grep -E '^(Verified novel ZIPs|Verified ZIP bytes): [0-9]+$' "$RUNNER_TEMP/private-bundle-check.log"
+          # The privacy-filtered output above includes verified counts.
       - name: Preview private Hugging Face import
         env:
           HF_TOKEN: ${{ secrets.HF_STORAGE_CONTROLLER_TOKEN }}
@@ -92,9 +92,10 @@ jobs:
             echo "::error::Configure HF_STORAGE_CONTROLLER_TOKEN in Actions secrets."
             exit 1
           fi
-          if ! python -m taiyou_storage.upload incoming/novels \
+          if ! python -m taiyou_storage.github_output --task novel-import --mode preview -- \
+              python -m taiyou_storage.upload incoming/novels \
                 --covers-folder incoming/covers --dedupe-local --batch-size "$BATCH_SIZE" \
-                --report "$RUNNER_TEMP/private-bulk-plan.csv" >"$RUNNER_TEMP/private-bulk-preview.log" 2>&1; then
+                --report "$RUNNER_TEMP/private-bulk-plan.csv"; then
             echo "::error::Novel preview failed or contains conflicts. No cloud data was changed."
             exit 1
           fi
@@ -120,10 +121,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if ! python -m taiyou_storage.upload incoming/novels \
+          if ! python -m taiyou_storage.github_output --task novel-import --mode apply -- \
+              python -m taiyou_storage.upload incoming/novels \
                 --covers-folder incoming/covers --dedupe-local --batch-size "$BATCH_SIZE" \
-                --report "$RUNNER_TEMP/private-bulk-plan.csv" --apply \
-                >"$RUNNER_TEMP/private-bulk-apply.log" 2>&1; then
+                --report "$RUNNER_TEMP/private-bulk-plan.csv" --apply; then
             echo "::error::Private HF upload stopped. Already committed batches are preserved; re-run the same export after reviewing private conflicts."
             exit 1
           fi

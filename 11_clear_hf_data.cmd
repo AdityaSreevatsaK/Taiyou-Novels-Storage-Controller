@@ -1,6 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
+call "%~dp0console_output.bat" start "DANGEROUS: reset entire private library"
 echo.
 echo DANGER: This deletes every file under data/ in your private Hugging Face dataset:
 echo novels, ZIPs, EPUBs, covers, personal reviews, progress and collections.
@@ -14,5 +15,6 @@ set /p "confirm=Begin FULL backup followed by a confirmed reset? Type YES: "
 if /I not "%confirm%"=="YES" (echo Cancelled. & pause & exit /b 0)
 py -m taiyou_storage.reset --apply
 set "result=%errorlevel%"
+call "%~dp0console_output.bat" end "DANGEROUS: reset entire private library" "%result%"
 pause
 exit /b %result%

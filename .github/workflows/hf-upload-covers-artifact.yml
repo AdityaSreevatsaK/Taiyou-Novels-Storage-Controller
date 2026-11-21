@@ -60,11 +60,11 @@ jobs:
           HF_HUB_DISABLE_SYMLINKS_WARNING: "1"
         shell: bash
         run: |
-          if ! python -m taiyou_storage.covers incoming/covers.zip >"$RUNNER_TEMP/private-cover-log.txt" 2>&1; then
+          if ! python -m taiyou_storage.github_output --task cover-import --mode preview -- python -m taiyou_storage.covers incoming/covers.zip; then
             echo "::error::Private cover preview failed; review locally for details."
             exit 1
           fi
-          echo "Private cover preview succeeded."
+          echo "Preview passed; no Hugging Face uploads were performed."
       - name: Upload changed covers to private HF (opt-in)
         if: ${{ inputs.apply_changes == true }}
         env:
@@ -72,8 +72,8 @@ jobs:
           HF_HUB_DISABLE_PROGRESS_BARS: "1"
         shell: bash
         run: |
-          if ! python -m taiyou_storage.covers incoming/covers.zip --apply >"$RUNNER_TEMP/private-cover-log.txt" 2>&1; then
+          if ! python -m taiyou_storage.github_output --task cover-import --mode apply -- python -m taiyou_storage.covers incoming/covers.zip --apply; then
             echo "::error::Cover upload failed; some earlier covers may have uploaded. Inspect privately before retrying."
             exit 1
           fi
-          echo "Private cover upload completed."
+          echo "Private cover import completed."

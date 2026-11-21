@@ -194,9 +194,9 @@ def run(argv: list[str] | None = None, backend: HFReadOnly | None = None,
             "Manifests ready to upload": status["pending"],
             "Failed inspections": status.get("failed", 0),
         }, reports=[args.reports_dir / "manifest-backfill" / "failures.csv"],
-            note="Only approved sidecar files may be uploaded; EPUBs and ZIPs unchanged.")
+            note="Sidecars only; EPUBs and ZIPs unchanged. Review before applying.",
+            status="PREVIEW")
         if not args.apply and not args.interactive:
-            print("PREVIEW ONLY. Use --interactive or --apply to upload sidecars.")
             return 0 if not status.get("failed") else 2
         if status.get("failed"):
             print("Some novels could not be inspected; refusing partial unattended writes.",

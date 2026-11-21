@@ -15,6 +15,7 @@ import shutil
 import sys
 
 from .core import DEFAULT_REPO
+from .console_summary import print_summary
 from .inspection_cache import cache_usage, inspection_cache_dir, validate_owned_cache
 
 NOVEL_NAMES = {"source.epub", "original.zip", "cover.jpg", "cover.jpeg", "cover.png", "cover.webp"}
@@ -60,10 +61,9 @@ def run(argv: list[str] | None = None) -> int:
             isolated_count, isolated_size = cache_usage(isolated)
         else:
             isolated_count, isolated_size = 0, 0
-        print(f"Owned inspection cache: {isolated}")
-        print(f"  {isolated_count} local files; {isolated_size:,} bytes on disk")
         strategy = None
         legacy_count = 0
+        legacy_estimate = "Not selected"
         if args.legacy_shared_cache:
             from huggingface_hub import scan_cache_dir
             info = scan_cache_dir(args.shared_cache_dir)
@@ -73,34 +73,53 @@ def run(argv: list[str] | None = None) -> int:
                 if not hasattr(info, "delete_files"):
                     raise RuntimeError("Upgrade huggingface_hub to support safe per-file cache deletion")
                 strategy = info.delete_files(*targets)
-            print(f"Legacy HF shared cache: {legacy_count} matching novel binary/cover entries")
-            if strategy is not None:
-                print(f"  Estimated space recoverable: {strategy.expected_freed_size_str}")
-                print("  WARNING: these entries may also have been cached by other local tools.")
-        else:
-            print("Older shared-cache downloads were not selected.")
-            print("  Add --legacy-shared-cache to preview those previous EPUB/ZIP/cover downloads.")
+                legacy_estimate = strategy.expected_freed_size_str
+
+        before = {
+            "Owned inspection files": isolated_count,
+            "Owned bytes": f"{isolated_size:,}",
+            "Legacy cache entries": legacy_count,
+            "Legacy potential space": legacy_estimate,
+        }
         if not args.apply:
-            print("PREVIEW ONLY. No files have been deleted. Add --apply to delete after confirmation.")
+            print_summary("Local cache cleanup preview", before,
+                          note="Local cache only. Nothing deleted; use --apply to confirm.",
+                          status="PREVIEW")
             return 0
         if not (isolated_count or legacy_count):
-            print("No selected local downloads to remove.")
+            print_summary("Local cache cleanup completed", before,
+                          note="No selected local files remain. Private HF data unchanged.",
+                          status="NO CHANGES")
             return 0
+        print_summary("Local cache cleanup preview", before,
+                      note="Close running inspection tools before deleting local cache files.",
+                      status="AWAITING CONFIRMATION")
         if not sys.stdin.isatty():
             raise RuntimeError("Deletion requires an interactive console")
-        print("Close all active novel inspection or migration processes before deleting cache files.")
         if input("Type DELETE LOCAL CACHE to confirm: ").strip() != "DELETE LOCAL CACHE":
-            print("Cancelled; no files deleted.")
+            print_summary("Local cache cleanup cancelled", before,
+                          note="No local or remote files deleted.", status="CANCELLED")
             return 0
         if isolated.exists():
             validate_owned_cache(isolated, args.repo)
             shutil.rmtree(isolated)
-            print("Removed owned inspection download cache.")
         if strategy is not None:
             strategy.execute()
-            print(f"Removed {legacy_count} selected legacy cache entries; "
-                  "blobs retained when other cached revisions still need them.")
-        print("Private Hugging Face dataset unchanged.")
+        # Re-scan, rather than claiming that no shared references remain.
+        legacy_remaining = 0
+        if args.legacy_shared_cache:
+            from huggingface_hub import scan_cache_dir
+            legacy_remaining = len(_legacy_targets(
+                scan_cache_dir(args.shared_cache_dir), args.repo))
+        print_summary("Local cache cleanup completed", {
+            "Owned files removed": isolated_count,
+            "Owned bytes removed": f"{isolated_size:,}",
+            "Legacy entries removed": legacy_count,
+            "Legacy potential space": legacy_estimate,
+            "Matching entries remaining": legacy_remaining,
+        }, note=("The legacy figure is an estimate; shared HF blobs may be retained. "
+                  "Private Hugging Face dataset unchanged."),
+            status="COMPLETED")
         return 0
     except (Exception, KeyboardInterrupt) as exc:
         print(f"ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
