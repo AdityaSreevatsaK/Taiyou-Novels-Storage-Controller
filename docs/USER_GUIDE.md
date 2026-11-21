@@ -72,6 +72,8 @@ do not commit private CSV/JSON reports.
 
 ## Repair missing synopsis, genre tags or publication status
 
+The current parser and validator support source publication statuses `Completed` and `Ongoing` only. `Hiatus` and `Dropped` remain open in [issue #46](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/46); do not enter them until the implementation and Reader contract are updated.
+
 Use `18_repair_novel_metadata.cmd` to **audit all** novels in the private
 catalogue or **add missing verified fields to one** novel. Option 1 writes a
 local Git-ignored CSV only. Options 2–4 prepare a private JSON draft, preview
@@ -137,6 +139,8 @@ Run the **12–15** tools directly or via the menu. All reports remain in the ig
 For the Retriever comparison, keep a local `Novel-Retriever` checkout next to this controller, or pass `--retriever-root PATH`. Automatic skipping in Retriever is a separate change. See [inspection guide](LIBRARY_INSPECTION.md) for evidence semantics, privacy and usage.
 
 ## Import covers
+
+The normal bulk uploader can also attach uniquely matched local sidecar images from `covers/`. Extracting embedded ZIP/EPUB cover artwork and publishing `coverPath` during that same novel upload remains open in [issue #54](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/54).
 
 When uploading covers, the controller stages the validated images and updated
 `data/library.json` in a temporary **local** directory and passes file paths
