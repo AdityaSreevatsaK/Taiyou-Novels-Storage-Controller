@@ -50,7 +50,7 @@ def _counts(report_dir: Path) -> dict[str, int]:
 
 def run(argv: list[str] | None = None, *, backend=None) -> int:
     parser = argparse.ArgumentParser(description="Counts-only private HF checks for Actions")
-    parser.add_argument("--mode", choices=("manifest", "deep"), default="manifest")
+    parser.add_argument("--mode", choices=("quick", "manifest", "deep"), default="manifest")
     args = parser.parse_args(argv)
     if backend is None and not os.environ.get("HF_TOKEN"):
         print("ERROR: Hugging Face read token not configured. No check was run.", file=sys.stderr)
