@@ -43,20 +43,23 @@
 
 ## Current code map
 
-| Layer | Files |
-| --- | --- |
-| Remote schema and paths | `taiyou_storage/core.py`, `paths.py` |
-| Import and cover reconciliation | `upload.py`, `covers.py`, `cover_batches.py` |
-| Read-only inspection and local reports | `inspection.py`, `inspection_cli.py`, `github_checks.py` |
-| Private backup and cloud runner | `actions.py`, `remote_backup.py`, `cloud_readiness.py`, `cloud_import.py` |
-| Metadata and research | `metadata_repair.py`, `metadata_batch.py`, `metadata_source.py`, `genre_repair.py` |
-| Dangerous and local maintenance | `reset.py`, `manifest_backfill.py`, `inspection_cleanup.py` |
-| Console and Actions summaries | `console_summary.py`, `github_output.py`, `console_output.bat` |
-| User entry points | `00_storage_menu.cmd` and numbered `01`-`18` CMD launchers |
-| Tests and automation | `tests/`, `.github/workflows/`, `requirements.txt` + `constraints.txt` |
+| Layer | Files | Current responsibility |
+| --- | --- | --- |
+| HF schema, catalogue validation and identity | `core.py`, `paths.py` | Private dataset v1 catalogue, immutable IDs, legacy/readable paths |
+| ZIP/EPUB upload planning and commit | `upload.py`, `bulk_batch.py`, `local_dedupe.py` | Validated imports, up to 10 novel batch commits, local duplicate checks and optional local `covers/` discovery |
+| Standalone cover packages and commits | `covers.py`, `cover_batches.py` | Manifest parsing, unique identity matching, image validation and bounded/resumable cover batches |
+| Download and basic catalogue CLI | `downloads.py`, `cli.py` | Original ZIP export, list/conflict/sync and catalogue backup |
+| Inspection and evidence cache | `inspection.py`, `inspection_cli.py`, `inspection_manifest.py`, `inspection_cache.py` | Revision-pinned quick/manifest/deep checks, chapter/cover/integrity reports and cache |
+| Inspection entry points and cleanup | `github_checks.py`, `inspection_cleanup.py`, `manifest_backfill.py` | Count-only Action checks, local reports, local-only cache cleanup and optional sidecar backfill |
+| Private backup and cloud workflows | `actions.py`, `remote_backup.py`, `cloud_readiness.py`, `cloud_import.py` | Private report/snapshot, read-only readiness and completed Retriever bundle verification |
+| Source metadata research and repair | `metadata_repair.py`, `metadata_batch.py`, `metadata_source.py`, `genre_repair.py` | Additive source-field discovery, review/import, guarded catalogue repair and historical artifact recovery |
+| Local destructive maintenance | `reset.py` | Backup-first clear of the HF `data/` tree only; never repository deletion |
+| Output and privacy boundary | `console_summary.py`, `github_output.py`, root `console_output.bat` | Concise local output and allowlisted public Action summaries |
+| Historical folder migration | `migrate_folders.py`, `migrate_production.py`, `scripts/verify_disposable_folder_migration.py` | Retained implementation/test history; one-shot production Actions are retired |
+| User entry points | `00_storage_menu.cmd`, numbered `01`-`18` launchers | Windows frontends; 08/09 are placeholders |
+| Tests and automation | `tests/`, `.github/workflows/`, `requirements.txt`, `constraints.txt` | Offline regression, workflow safety and dependency constraints |
 
-Read the **actual module, call sites and tests** before modifying behaviour. Do not copy paths or old workflow names from the archived handbook.
-
+The map is a starting point, not a guarantee that a module still owns the same behaviour. Inspect the current file, imports/call sites, tests and active workflow before editing.
 ## Mandatory dynamic project-state refresh
 
 **Do this at the start of every substantial task and again before merge.** Never begin from a previous AI summary, this document's dated state, an old PR description or an archived runbook alone.
