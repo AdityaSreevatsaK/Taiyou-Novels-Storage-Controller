@@ -50,7 +50,7 @@ cover images, matches by exact normalised title, local ZIP basename or stable
 24-character novel ID, then uploads the novels and their matched covers
 **together in the same revision-guarded commit**. A nested
 `covers/Novel One/cover.jpg` or `covers/<novel-id>/cover.png` is also valid.
-Covers are optional. No images are downloaded from the internet automatically.
+Covers are optional. No images are downloaded from the internet automatically. The automatic cover matching in this flow applies to **separately supplied local sidecar images** in `covers/`; it does not yet extract embedded artwork from each source ZIP/OPF-declared EPUB and write a standalone `coverPath` in the same upload. That broader requirement remains open in [issue #54](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/54).
 
 Unmatched, ambiguous, duplicate, invalid or unexpectedly conflicting covers
 are shown as `COVER_CONFLICT` in `reports/bulk-upload-plan.csv`; **all writes
