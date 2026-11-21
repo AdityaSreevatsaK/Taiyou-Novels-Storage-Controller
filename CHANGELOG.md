@@ -6,6 +6,13 @@ versioned releases.
 
 ## Unreleased
 
+- Consolidate project vision, original design decisions, current architecture and
+  module ownership, incidents/lessons, operational deployment and realistic roadmap.
+- Add a current zero-context AI agent playbook and short root AGENTS.md; archive the
+  old comprehensive handbook for historical provenance instead of losing details.
+- Cross-link current documents from the root README and documentation index;
+  mark retired migration workflows and non-working restore/delete launchers clearly.
+
 - Add private, revision-pinned, read-only inventory, cover audit, Retriever comparison, integrity verification and HTML health report.
 - Add offline regression tests, bounded concurrent deep scanning and revision-keyed local cache; no HF write operations.
 
