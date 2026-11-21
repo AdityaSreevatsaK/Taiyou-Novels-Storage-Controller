@@ -71,6 +71,26 @@ a vulnerability merely to obtain a green badge.
 | **HF - Restore novel genres from original download artifacts** | Optional specialised historical repair |
 | **Release - publish after green master CI** | Version-guarded code-only release |
 
+## Verify cloud readiness without writing data
+
+Use [**HF - Verify remote-first readiness (read only)**](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/workflows/hf-live-readiness.yml)
+after configuring `HF_STORAGE_CONTROLLER_TOKEN` and an accessible **PRIVATE**
+`AdityaSreevatsaK/Taiyous-Novels-Backup` dataset.
+
+The workflow checks source/destination privacy, immutable file metadata,
+remote cryptographic identities and conflicting existing copies. It also runs
+a quick library catalogue audit. **No novel EPUBs or ZIPs are downloaded,
+no HF commits or backups are created, and no private file paths or titles
+are published in this public repository's Actions logs.** The first merge
+of this workflow triggers one read-only readiness run on `master`; thereafter
+it remains manually dispatchable.
+
+A successful result confirms the available source and destination inventory
+and credentials. It **does not prove storage-region compatibility** or
+guarantee an actual server-side copy will succeed; that must be confirmed by
+a separately authorised real backup, and any failure must stop without
+silently switching to full downloads.
+
 ## Cloud-only novel import from Novel-Retriever
 
 Use [**HF - Import Novel-Retriever bundle (cloud only)**](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/workflows/hf-cloud-import.yml) from the Storage Controller's Actions tab.

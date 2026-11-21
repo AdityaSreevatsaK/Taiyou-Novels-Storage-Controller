@@ -40,6 +40,7 @@ Use the menu for additional catalogue, conflict, chapter, sync and comparison ut
 Run storage maintenance directly from **GitHub Actions** without downloading novels to your laptop:
 
 - [**HF - Run library checks (read only)**](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/workflows/hf-inspect.yml): choose **quick** for remote listings only, **manifest** for lightweight sidecars, or **deep** for content validation on an ephemeral cloud runner.
+- [**HF - Verify remote-first readiness (read only)**](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/workflows/hf-live-readiness.yml): validate access to private source/backup datasets and remote cryptographic identities without downloading or changing novels.
 - [**HF - Back up entire dataset PRIVATELY**](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/workflows/hf-private-backup.yml): default **remote-first** copies source objects to a different private HF dataset and verifies object identities, with **full-verified** as an explicit runner-based fallback.
 - [**HF - Import Novel-Retriever bundle (cloud only)**](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/workflows/hf-cloud-import.yml): use a completed Retriever export workflow run ID, preview verified novel ZIPs, then optionally upload directly to private HF. **No download to your Windows computer.**
 

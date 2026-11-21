@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github" / "workflows"
 RETAINED = {
     "ci.yml", "hf-inspect.yml", "hf-private-backup.yml",
-    "hf-private-reports.yml", "hf-cloud-import.yml", "hf-restore-genres.yml",
+    "hf-private-reports.yml", "hf-cloud-import.yml", "hf-live-readiness.yml", "hf-restore-genres.yml",
     "hf-upload-covers-artifact.yml", "release.yml",
 }
 RETIRED = {
