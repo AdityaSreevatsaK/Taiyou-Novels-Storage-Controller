@@ -20,6 +20,7 @@ from urllib.parse import urlsplit
 import xml.etree.ElementTree as ET
 from zipfile import BadZipFile, ZipFile
 
+from .console_summary import print_summary
 from .core import DEFAULT_REPO, validate_catalogue
 
 UPSTREAM_REPO = "RichardDaffern/Novel-Retriever"
@@ -268,7 +269,9 @@ def main(argv=None) -> int:
         registry = request.json()
         repaired, stats = from_registry(catalogue, registry, client)
         # Public CI logs contain counts only (no private titles, IDs or excerpts).
-        print(json.dumps({"mode": "APPLY" if args.apply else "PREVIEW", **stats}, sort_keys=True))
+        print_summary("Source genres " + ("apply" if args.apply else "preview"),
+                      stats, note="Only verified source tags are considered.",
+                      status="COMPLETED" if args.apply else "PREVIEW")
         if not args.apply or not stats.get("books_updated"):
             return 0
         if api.dataset_info(args.repo, token=token).sha != revision:
