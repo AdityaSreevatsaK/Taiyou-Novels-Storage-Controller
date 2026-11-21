@@ -44,6 +44,14 @@ This repository is **neither** a web API nor a frontend. There is no independent
 
 Local prerequisites: Python, installed requirements, HF login/token with *the minimum required access*, Windows CMD for double-click usage, disk space for selected imports or deep scans. GitHub runners use their own environment and Actions secrets; a developer's laptop login is **not** automatically available to Actions.
 
+### Dependencies and configuration
+
+- Direct runtime dependencies are declared in `requirements.txt`: `huggingface_hub>=0.24,<2`, `Pillow>=13,<14` (strict image decoding) and `beautifulsoup4>=4.14,<5` (restricted public book-page metadata parsing).
+- `constraints.txt` pins the tested direct and transitive versions. Update it deliberately and run the full Windows/Linux Python 3.11/3.12 matrix plus `pip-audit`; do not casually remove the constraints include.
+- The default source is `AdityaSreevatsaK/Taiyous-Novels`. `HF_DATASET_REPO` can override the dataset in supported CLI paths; any override must still pass private-dataset and safety validation. `HF_TOKEN` or `hf auth login` supplies local authentication. GitHub Actions use repository secrets such as `HF_INSPECTION_READ_TOKEN`, `HF_STORAGE_CONTROLLER_TOKEN` and `NOVEL_LIBRARY_ACTIONS_TOKEN` only in the workflows that need them.
+- No `pyproject.toml`, application server, database, queue or frontend build is part of this repository. The Python package is invoked with `python -m taiyou_storage.<module>`; Windows CMD files are convenience launchers.
+
+
 ## Codebase map
 
 | Responsibility | Primary source | Comments |
