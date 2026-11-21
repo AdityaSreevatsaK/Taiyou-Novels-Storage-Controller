@@ -28,6 +28,18 @@ class GitHubWorkflowCleanupTests(unittest.TestCase):
         self.assertEqual(actual, RETAINED)
         self.assertTrue(RETIRED.isdisjoint(actual))
 
+    def test_all_private_hf_workflows_are_repository_and_master_gated(self):
+        for path in sorted(WORKFLOWS.glob("hf-*.yml")):
+            yml = path.read_text(encoding="utf-8")
+            with self.subTest(workflow=path.name):
+                self.assertIn(
+                    "github.repository == 'AdityaSreevatsaK/Taiyou-Novels-Storage-Controller'",
+                    yml,
+                )
+                self.assertIn("github.ref == 'refs/heads/master'", yml)
+                self.assertIn("group: hf-storage-controller", yml)
+                self.assertIn("cancel-in-progress: false", yml)
+
     def test_private_checks_are_explicit_read_only_and_do_not_upload_artifacts(self):
         yml = (WORKFLOWS / "hf-inspect.yml").read_text(encoding="utf-8")
         self.assertIn("workflow_dispatch:", yml)
