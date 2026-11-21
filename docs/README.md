@@ -2,6 +2,22 @@
 
 Start with the [project README](../README.md) for setup and the most-used commands.
 
+## Start here: project context and maintenance
+
+| Guide | Read it for |
+| --- | --- |
+| [Project vision, brainstorming and history](PROJECT_VISION_AND_HISTORY.md) | Original goals, key trade-offs, changes over time and related repositories |
+| [Current architecture, codebase and tech stack](ARCHITECTURE.md) | Module map, Python/HF/GitHub integration, data contracts and concurrency |
+| [AI agent playbook](AI_AGENT_PLAYBOOK.md) | Zero-context onboarding, permission gates, development and release checklist, handover template |
+| [Failures and lessons learnt](FAILURES_AND_LESSONS.md) | Past incident patterns, fixes, regressions and recovery discipline |
+| [Operations and deployment](OPERATIONS_AND_DEPLOYMENT.md) | Local Windows setup, GitHub Actions, credentials, verification and deployment boundaries |
+| [Roadmap](ROADMAP.md) | Delivered features, prioritised proposals, known limitations and open questions |
+| [Output conventions](OUTPUT_CONVENTIONS.md) | Concise start/counts/closure and privacy-safe public Actions summaries |
+
+**Current agent instructions:** [AGENTS.md](../AGENTS.md). The [pre-restructure
+historical agent handbook](archive/AGENTS_PRE_2026-11-21.md) is retained for
+background only and contains out-of-date paths/workflows.
+
 ## Everyday use
 
 | Guide | Covers |

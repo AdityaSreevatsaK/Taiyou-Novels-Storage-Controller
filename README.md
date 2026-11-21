@@ -63,6 +63,16 @@ Browse the [**documentation index**](docs/README.md) for migration history, genr
 
 Windows commands now show a short start, numeric summary, and clear end status. GitHub Actions publish a counts-only Markdown summary, keeping detailed private logs off the public workflow console. See [Output conventions](docs/OUTPUT_CONVENTIONS.md).
 
+## Project vision, architecture and agent guidance
+
+This repository is a storage control plane for a private novel library, not the
+novel downloader or the Cloudflare reader. See the [project vision and
+history](docs/PROJECT_VISION_AND_HISTORY.md), [current
+architecture](docs/ARCHITECTURE.md), [incident lessons](docs/FAILURES_AND_LESSONS.md),
+[operations and deployment](docs/OPERATIONS_AND_DEPLOYMENT.md), and
+[roadmap](docs/ROADMAP.md). Future maintainers and coding agents should start
+with [AGENTS.md](AGENTS.md) and the [AI agent playbook](docs/AI_AGENT_PLAYBOOK.md).
+
 ## Development
 
 ```powershell
