@@ -9,7 +9,7 @@ ZIPs or EPUBs in public GitHub Actions logs, summaries or artifacts.
 
 1. Open [Actions > HF - Run library checks (read only)](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/workflows/hf-inspect.yml).
 2. Choose **Run workflow** on `master`.
-3. Select **manifest** (recommended) or **deep**, then select **Run workflow**.
+3. Select **quick** (fastest), **manifest** (recommended), or **deep**, then select **Run workflow**.
 4. After completion, open the run's **Summary** for numeric results.
 
 The Action runs **one revision-pinned scan** and checks chapter inventory,
@@ -17,7 +17,7 @@ missing and suspicious covers, catalogue references, integrity issues, potential
 duplicate novels and library health. It displays concise **counts only**.
 It runs no Hugging Face writes and has GitHub permission `contents: read`.
 
-- **Manifest:** Quickly reads catalogue, paths and small valid sidecars. Does
+- **Quick:** Reads the catalogue and a remote file listing only. Does not fetch\n  EPUBs, original ZIPs or any cover images; sizes and references are listing-level\n  evidence, not proof of readable chapters or images.\n- **Manifest:** Quickly reads catalogue, paths and small valid sidecars. Does
   not fetch every EPUB or ZIP. An unverified cover or chapter range stays
   `UNVERIFIED` rather than being presented as valid.
 - **Deep:** Downloads EPUB/ZIP/image contents to an ephemeral runner to check
@@ -65,10 +65,52 @@ a vulnerability merely to obtain a green badge.
 | **CI** | Automatic offline tests on Windows/Linux plus weekly and PR dependency vulnerability audit; never reads private HF |
 | **HF - Run library checks (read only)** | Manual combined inspection, counts-only logs |
 | **HF - Export novel names and conflicts PRIVATELY** | Manual export to a separate private HF backup dataset |
-| **HF - Back up entire dataset PRIVATELY** | Manual snapshot and checksum verification |
+| **HF - Back up entire dataset PRIVATELY** | Remote-first private snapshot, verified using immutable object identities, with optional full-byte verification on a runner |
 | **HF - Upload covers from Novel-Retriever artifact** | Manual preview, optional approved cover upload |
 | **HF - Restore novel genres from original download artifacts** | Optional specialised historical repair |
 | **Release - publish after green master CI** | Version-guarded code-only release |
+
+## Remote-first backups (no novel downloads to your laptop)
+
+[**HF - Back up entire dataset PRIVATELY**](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/workflows/hf-private-backup.yml)
+now offers two modes:
+
+- **remote-first (default):** Copies source objects from the private novel
+  dataset to a separate private backup dataset using Hugging Face
+  `CommitOperationCopy` and a pinned source revision. This avoids downloading
+  full novel files to the GitHub runner. Each batch is at most 40 source objects.
+  It uses remote SHA-256/Xet/Git object identities **and sizes** to verify
+  the complete backup before publishing a private verification receipt.
+- **full-verified (fallback):** The historical two-way download, upload and
+  independent SHA-256 verification. Large binary data are handled only by the
+  temporary GitHub runner. This consumes more time, network and disk space,
+  but supports environments where HF server-side copies fail or some object
+  identity is unavailable.
+
+Both modes keep the original source dataset unchanged, use the existing
+`HF_STORAGE_CONTROLLER_TOKEN` Actions secret, and **never publish book bytes,
+file names or detailed reports to public GitHub Actions**. The backup must be
+PRIVATE and belong to the same Hugging Face owner; cross-repository server-side
+copy requires both datasets to be in a compatible storage region. A remote
+copy failure does **not** silently fall back to downloading the dataset.
+Re-run a failed remote-first snapshot to reuse already verified destination
+objects, or explicitly choose full-verified if needed.
+
+A verified remote snapshot is an independent private copy of the files at
+one immutable source revision, not a guarantee that the original EPUB contents
+are semantically correct. Deep validation is a separate read-only check.
+The verification receipt lives inside the PRIVATE backup dataset at
+`snapshots/<revision>/verification.json`.
+
+## Limits
+
+GitHub Actions cannot access ZIP files that exist only on your Windows
+computer. New local uploads must first reach GitHub as a private permitted
+artifact or be uploaded directly. Byte-level EPUB validation still requires
+reading contents on an ephemeral cloud runner, although no files reach your
+laptop. Remote backup and quick audits usually need only API metadata and
+small JSON content, so they scale considerably better to large catalogues.
+Any read/write operation that needs HF credentials requires Actions secrets.
 
 ## Retired workflows
 
