@@ -35,7 +35,7 @@ These counts are distinct: owned **files** and legacy **cache entries** are
 not novel counts. Shared Hugging Face cache blobs might remain referenced,
 so a displayed legacy **estimated** recovery amount is not guaranteed.
 
-The common `19_command_output.cmd` handles start/final status for Windows
+The common `console_output.bat` handles start/final status for Windows
 launchers. Python entrypoints use `console_summary.print_summary` for
 consistent labelled metrics, report locations and a final state. Verbose
 per-novel output must remain opt-in via `--verbose` where supported. Mandatory
