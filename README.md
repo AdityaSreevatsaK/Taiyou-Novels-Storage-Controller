@@ -71,7 +71,7 @@ history](docs/PROJECT_VISION_AND_HISTORY.md), [current
 architecture](docs/ARCHITECTURE.md), [incident lessons](docs/FAILURES_AND_LESSONS.md),
 [operations and deployment](docs/OPERATIONS_AND_DEPLOYMENT.md), and
 [roadmap](docs/ROADMAP.md). Future maintainers and coding agents should start
-with [AGENTS.md](AGENTS.md) and the [AI agent playbook](docs/AI_AGENT_PLAYBOOK.md).
+with [AGENTS.md](AGENTS.md), the [AI agent playbook](docs/AI_AGENT_PLAYBOOK.md), and the [dated project-state snapshot](docs/PROJECT_STATE.md), which must be revalidated against live GitHub state.
 
 ## Development
 
