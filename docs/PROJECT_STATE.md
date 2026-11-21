@@ -79,7 +79,7 @@ The repository tree and workflow inventory test confirm these nine active YAML f
 
 Retired migration, one-time backup verification, one-time cover recovery and branch-pruning workflows are not active. Confirm actual files in `.github/workflows/` before dispatching anything.
 
-**Branch-gate finding:** at the audit baseline, `hf-private-reports.yml`, `hf-restore-genres.yml` and `hf-upload-covers-artifact.yml` did not explicitly restrict their jobs to the repository's `master` ref or share the common HF workflow concurrency group. This documentation refresh adds those guards and regression tests. Verify the merged files before relying on this intended correction.
+**Branch-gate finding:** at the audit baseline, `hf-private-reports.yml`, `hf-restore-genres.yml` and `hf-upload-covers-artifact.yml` did not explicitly restrict their jobs to the repository's `master` ref or disable persisted checkout credentials. They already used the common HF workflow concurrency group. This documentation refresh adds the missing branch guard, disables persisted checkout credentials and adds regression tests. Verify the merged files before relying on this intended correction.
 
 ## Outstanding work and limitations
 
