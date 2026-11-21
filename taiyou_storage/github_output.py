@@ -38,6 +38,10 @@ METRICS = frozenset({
     "Matched local covers", "Updated covers", "Unchanged covers",
     "Local ZIPs found", "Equivalent ZIPs skipped", "HF commit batches",
     "New novels uploaded", "Existing novels updated", "Changes applied",
+    "Novels reported", "Title conflicts reported", "Covers changed", "HF commits",
+    "Novels updated", "Genres restored", "Descriptions restored",
+    "Statuses restored", "Already tagged", "Unknown source",
+    "Ambiguous source", "Missing genres",
 })
 # Strict numeric values are essential: never echo arbitrary command output.
 METRIC_LINE = re.compile(r"^\s*([A-Za-z][A-Za-z -]{0,65})\s*:\s*([0-9][0-9,]*)\s*$")
