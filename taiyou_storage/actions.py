@@ -237,6 +237,10 @@ def main(argv=None) -> int:
     for action in ("report", "backup"):
         p = commands.add_parser(action)
         p.add_argument("--backup-repo", required=True)
+        if action == "backup":
+            p.add_argument("--mode", choices=("remote-first", "full-verified"),
+                           default="remote-first",
+                           help="Remote object-copy verification, or full checksum verification")
     args = parser.parse_args(argv)
     token = os.environ.get("HF_TOKEN", "").strip()
     if not token:
@@ -252,8 +256,14 @@ def main(argv=None) -> int:
         elif args.action == "report":
             report_to_private_backup(api, args.backup_repo, token)
         elif args.action == "backup":
-            revision, paths = inventory(api, token)
-            copy_to_private_backup(api, args.backup_repo, token, revision, paths)
+            if args.mode == "remote-first":
+                from .remote_backup import remote_backup
+                counts = remote_backup(api, args.backup_repo, token)
+                for label, count in counts.items():
+                    print(f"{label}: {count}")
+            else:
+                revision, paths = inventory(api, token)
+                copy_to_private_backup(api, args.backup_repo, token, revision, paths)
         return 0
     except ActionError as exc:
         print("ERROR:", exc, file=sys.stderr)

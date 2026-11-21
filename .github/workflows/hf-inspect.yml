@@ -4,11 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       depth:
-        description: "Check depth: manifest is lightweight; deep downloads private files temporarily"
+        description: "Quick checks listings; manifest checks small sidecars; deep downloads privately to the runner"
         required: true
         type: choice
         default: manifest
         options:
+          - quick
           - manifest
           - deep
 
