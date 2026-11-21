@@ -49,4 +49,4 @@ jobs:
             echo "::error::Configure HF_INSPECTION_READ_TOKEN or HF_STORAGE_CONTROLLER_TOKEN in repository Actions secrets."
             exit 1
           fi
-          python -m taiyou_storage.github_checks --mode "$CHECK_DEPTH"
+          python -m taiyou_storage.github_output --task inspection --mode verify -- python -m taiyou_storage.github_checks --mode "$CHECK_DEPTH"
