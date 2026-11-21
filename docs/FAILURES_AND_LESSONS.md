@@ -44,7 +44,7 @@ These are open issues, not completed fixes:
 - [#54: embedded cover extraction](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/54): normal upload can attach separately supplied local cover files, but does not yet extract authentic artwork from the novel ZIP/OPF-declared EPUB and publish `coverPath` in the same transaction.
 - [#46: Hiatus / Dropped publication statuses](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/46): source parser and metadata patch validator currently support `Completed` and `Ongoing` only. Do not infer a status or alter a real book from issue text alone.
 
-A separate workflow hardening gap was identified during this audit: three manual private-HF workflows lacked a repository/master job guard and common concurrency group. This documentation change adds those guards and a workflow regression test. Verify the actual merged YAML and passing CI before relying on them.
+A separate workflow hardening gap was identified during this audit: three manual private-HF workflows lacked a repository/master job guard and disabled checkout credential persistence; they already shared the controller concurrency group. This change adds the missing branch guard, disables persisted checkout credentials and adds a workflow regression test. Verify the actual merged YAML and passing CI before relying on them.
 
 ## Failure response protocol for future agents
 
