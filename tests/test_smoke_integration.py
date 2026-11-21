@@ -211,7 +211,7 @@ class EndToEndSmokeTests(unittest.TestCase):
                     result, _ = quiet_run(upload_main, [
                         str(novels), "--repo", REPO, "--interactive"])
                 self.assertEqual(result, 0)
-                self.assertEqual(len(hub.commits), 2)
+                self.assertEqual(len(hub.commits), 1)
                 books = hub.books()
                 self.assertEqual(len(books), 2)
                 self.assertEqual(len([p for p in hub.files if p.endswith("source.epub")]), 2)
@@ -221,7 +221,7 @@ class EndToEndSmokeTests(unittest.TestCase):
                 self.assertEqual(result, 0)
                 self.assertRegex(output, r"Unchanged novels\s*:\s*2")
                 self.assertNotIn("[UNCHANGED]", output)
-                self.assertEqual(len(hub.commits), 2)
+                self.assertEqual(len(hub.commits), 1)
                 self.assertEqual(len(hub.downloads), 4)
                 self.assertEqual(
                     set(hub.downloads),
@@ -278,7 +278,7 @@ class EndToEndSmokeTests(unittest.TestCase):
                 result, output = quiet_run(
                     upload_main, [str(novels), "--repo", REPO, "--apply"])
             self.assertEqual(result, 0, output)
-            self.assertEqual(len(hub.commits), 6)
+            self.assertEqual(len(hub.commits), 1)
             self.assertEqual(len(hub.books()), 6)
             self.assertIn("Changes applied", output)
 
