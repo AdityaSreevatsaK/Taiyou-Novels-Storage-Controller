@@ -5,6 +5,7 @@ Remote writes require --apply. CI never uses network or credentials.
 """
 from __future__ import annotations
 
+from collections import Counter
 import argparse
 import hashlib
 import io
