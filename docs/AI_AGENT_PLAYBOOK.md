@@ -9,8 +9,29 @@
 3. **Read task-specific guides:** [User commands](USER_GUIDE.md), [Upload](SMART_UPLOAD.md), [Inspection](LIBRARY_INSPECTION.md), [Metadata](METADATA_REPAIR.md), [Safety](SAFETY_AND_RECOVERY.md), [Actions](GITHUB_ACTIONS.md), [Operations](OPERATIONS_AND_DEPLOYMENT.md), [Output](OUTPUT_CONVENTIONS.md), [Roadmap](ROADMAP.md).
 4. **Inspect source and tests:** current `taiyou_storage/*.py` modules, call sites, relevant `tests/*.py`, corresponding numbered `.cmd` launcher and `.github/workflows/*.yml`, if applicable.
 5. **Inspect the live Git state:** existing PRs, open branches, exact `master` commit SHA and CI status before making or merging a change. Read the latest user instruction and preserve all unspecified constraints.
+6. **Read the [dated project-state ledger](PROJECT_STATE.md) only as a starting snapshot.** Re-verify every relevant entry against current files, Git refs, PRs, issues and tests.
 
 **Authority order:** current explicit owner request > verified current code, tests and deployed cross-repo contracts > current operational guides > dated incidents/older handbook. A historical note alone never grants approval to run production operations.
+
+## Mandatory live-state refresh before substantial work
+
+Perform this sequence **at the start of every substantial task**, even if the previous agent claims it already did so. Repeat it before review/merge if the branch or base may have moved.
+
+1. **Instructions:** locate every applicable `AGENTS.md`, including nested files under the target directory. The root instructions are not proof that no more-specific instructions exist.
+2. **Local Git state:** in an available checkout, inspect `git status --short --branch`, `git branch --show-current`, `git rev-parse HEAD`, `git remote -v`, `git log -20 --date=short --pretty=format:"%h %ad %d %s"`, `git diff --stat`, `git diff` and `git diff --cached --stat`. Preserve unexplained uncommitted changes. Compare local HEAD with the current remote default branch. If no checkout exists, explicitly record that local working-tree state is unavailable and use remote GitHub refs/commits instead.
+3. **Remote collaboration state:** verify repository default branch and HEAD SHA; inspect current branches, latest commits and changed files, open PRs, review threads, exact CI conclusions, open issues and relevant recent merged PRs. Do not assume old PRs, branches, Actions or issue statuses are current.
+4. **Implementation reality:** inspect the exact source modules, imports/call sites, tests, dependency/config files, CMD entry points and active workflow YAML affected by the task. For cross-repository work, inspect the current producer and consumer contracts rather than copying a historical field list.
+5. **Classify each relevant feature with evidence:**
+   - **Implemented:** source path and relevant tests exist. State separately whether live integration acceptance exists.
+   - **Partially implemented:** code covers some use cases, but a format, integration, acceptance or safety requirement remains open.
+   - **Planned:** issue/roadmap only; do not describe as available.
+   - **Deprecated/retired:** removed, disabled or replaced; do not dispatch or resurrect it without a new explicit decision.
+   - **Historical:** a completed one-time migration/repair or dated test result, not a reusable operation.
+6. **Reconcile contradictions:** user instructions define intent; current implementation/tests and deployed interfaces establish what actually runs. Prior conversations, AI summaries, archived handbooks and old PR bodies explain why, but are not proof of current implementation. Resolve doc/code contradictions deliberately.
+7. **Maintain the ledger:** update [PROJECT_STATE.md](PROJECT_STATE.md) when the capability state, active workflows, issue list, repository layout or verification evidence changes. Record the exact baseline SHA and date. It remains a dated snapshot and must never replace the live-state refresh.
+8. **Before merge:** re-check status/diff, changed files, base/head SHAs, reviews and every required job on the exact PR head. A queued job, green earlier commit, synthetic test, preview or successful merge is not a production write.
+
+A useful current-state review is not a recitation of docs. It must answer: **what exists now, what is only partly done, what remains a proposal, what was retired, and what evidence supports each statement?**
 
 ## Scope and permission gates
 
@@ -113,6 +134,7 @@ py -m unittest discover -s tests -q
 ### GitHub Actions
 
 - Check workflow **actually exists** in `.github/workflows/`; historical migration files may be retired.
+- For every HF workflow that can read/write private data, verify the exact repository and `refs/heads/master` job gate, least-privilege permissions, shared concurrency policy and secret scope. A `workflow_dispatch` trigger alone does not pin execution to master.
 - Pin Actions dependencies, default to least privileges, scope secrets to applicable steps.
 - Use `github_output.py` around noninteractive private operations with fixed task name/metric allowlist. Do not echo original command output or raw exception text.
 - Distinguish verified **preview** from **apply**; do not publish sensitive GitHub artifacts.
@@ -144,6 +166,8 @@ PR URL and merge state:
 A handover is inaccurate if it reports intended actions as completed. Link evidence rather than copying confidential logs into the handover.
 
 ## Useful references
+
+- [Dated project-state snapshot](PROJECT_STATE.md): last verified Git baseline, active workflow inventory, implemented/partial/planned/retired capability ledger and open tracked issues. Refresh it against live GitHub state before relying on it.
 
 - [Historical detailed agent handbook](archive/AGENTS_PRE_2026-11-21.md) preserves the long pre-restructure engineering narrative. It contains **obsolete** descriptions of legacy paths, placeholder inspection and retired workflow names. Use only for history.
 - [Failure register](FAILURES_AND_LESSONS.md) lists what went wrong and the guardrails now expected.
