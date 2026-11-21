@@ -49,6 +49,10 @@ The cover workflow uses artifacts from `RichardDaffern/Novel-Retriever` and
 accepts `NOVEL_LIBRARY_ACTIONS_TOKEN` when cross-repository GitHub artifact
 permissions are needed.
 
+## Clean GitHub Actions summaries
+
+Each manual maintenance Action uses `taiyou_storage.github_output` to show a short **start**, **allowlisted numeric metrics**, and **result**. The Actions summary displays a small Markdown table. Underlying private output stays inside the ephemeral runner, never in public logs or uploaded artifacts. A preview reports `Preview only`; apply is a separate explicit step. See [Output conventions](OUTPUT_CONVENTIONS.md). Hosted-runner setup and dependency-install output are controlled by GitHub.
+
 ## Automated dependency security checks
 
 The existing `CI` workflow now runs a dedicated `pip-audit` job for the
