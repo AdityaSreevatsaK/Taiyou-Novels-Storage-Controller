@@ -15,10 +15,6 @@ concurrency:
   group: hf-storage-controller
   cancel-in-progress: false
 
-concurrency:
-  group: hf-storage-controller
-  cancel-in-progress: false
-
 jobs:
   report:
     if: github.repository == 'AdityaSreevatsaK/Taiyou-Novels-Storage-Controller' && github.ref == 'refs/heads/master'
