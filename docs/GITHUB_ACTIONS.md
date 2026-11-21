@@ -66,9 +66,26 @@ a vulnerability merely to obtain a green badge.
 | **HF - Run library checks (read only)** | Manual combined inspection, counts-only logs |
 | **HF - Export novel names and conflicts PRIVATELY** | Manual export to a separate private HF backup dataset |
 | **HF - Back up entire dataset PRIVATELY** | Remote-first private snapshot, verified using immutable object identities, with optional full-byte verification on a runner |
+| **HF - Import Novel-Retriever bundle (cloud only)** | Pull a checked, complete export directly from another GitHub Actions run and upload it to PRIVATE HF without downloading it to Windows |
 | **HF - Upload covers from Novel-Retriever artifact** | Manual preview, optional approved cover upload |
 | **HF - Restore novel genres from original download artifacts** | Optional specialised historical repair |
 | **Release - publish after green master CI** | Version-guarded code-only release |
+
+## Cloud-only novel import from Novel-Retriever
+
+Use [**HF - Import Novel-Retriever bundle (cloud only)**](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/workflows/hf-cloud-import.yml) from the Storage Controller's Actions tab.
+
+1. Run the Novel Retriever's **Export Completed Novels - Hugging Face Upload Bundle** workflow, or use the existing completed-104 export run.
+2. Copy the **export run ID** from the Retriever's Actions URL. It must be the *export* run, not a per-novel download job.
+3. On the Storage Controller's cloud import workflow, select `master` and enter the run ID. Choose `taiyou-completed-novels` or `taiyou-completed-104` according to the artifact's name.
+4. Leave **apply_changes=false** for an initial preview. The workflow downloads the artifact **to the GitHub runner, not to your laptop**, verifies every book ZIP against the export manifest's SHA-256 and checks for edition conflicts.
+5. Once the preview succeeds, rerun the same inputs with **apply_changes=true**. It uses the existing deduplicating, revision-guarded uploader, with atomic HF batches of 5 or 10 novels and optional matching images from the artifact's `covers/` directory.
+
+Never publish the generated private preview reports or the novel artifact from this controller as GitHub Actions artifacts. Output contains only counts. This workflow uses the existing `HF_STORAGE_CONTROLLER_TOKEN` for **write** access to the private HF dataset and `NOVEL_LIBRARY_ACTIONS_TOKEN` when cross-repository GitHub artifact access needs explicit permission.
+
+This bridge supports **completed consolidated exports only**, not arbitrary partially downloaded chapter batches or unverified individual artefacts. An invalid, expired or conflicted export fails without touching Hugging Face. If a previous HF batch was committed but a later batch failed, rerun the same export: the controller skips already committed matching novels. Files remain available in the original Retriever export run until GitHub's artifact retention period ends.
+
+No local download is required for exported Retriever novels. Files found **only on your Windows disk** must still be uploaded through the normal `01_bulk_upload.cmd` path.
 
 ## Remote-first backups (no novel downloads to your laptop)
 
