@@ -101,7 +101,7 @@ class OutputContractTests(unittest.TestCase):
         for name in names:
             with self.subTest(command=name):
                 content = (ROOT / f"{name}.cmd").read_text(encoding="utf-8")
-                self.assertIn("19_command_output.cmd", content)
+                self.assertIn("console_output.bat", content)
                 self.assertIn(' start "', content)
                 self.assertIn(' end "', content)
 
