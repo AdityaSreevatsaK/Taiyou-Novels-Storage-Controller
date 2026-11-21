@@ -1,14 +1,11 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-echo.
-echo Smart combined novel and cover upload - batched for speed
-echo Novels from novels\ and matching images from covers\ are included.
-echo Up to 10 novels and their covers share one HF commit.
-echo Equivalent ZIPs are skipped; ambiguous covers or editions block writes.
-echo No local ZIP files will be deleted.
-echo.
+call "%~dp019_command_output.cmd" start "Bulk novel and cover upload"
+echo   Scope : novels/ plus matching covers/; preview and confirmation required.
+echo   Safety: Original local files are preserved.
 py -m taiyou_storage.upload novels --dedupe-local --interactive
 set "result=%errorlevel%"
+call "%~dp019_command_output.cmd" end "Bulk novel and cover upload" "%result%"
 pause
 exit /b %result%
