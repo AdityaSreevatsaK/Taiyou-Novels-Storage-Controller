@@ -19,6 +19,7 @@ CANONICAL = (
     "docs/OPERATIONS_AND_DEPLOYMENT.md",
     "docs/ROADMAP.md",
     "docs/AI_AGENT_PLAYBOOK.md",
+    "docs/PROJECT_STATE.md",
     "docs/archive/AGENTS_PRE_2026-11-21.md",
 )
 NAVIGATION = CANONICAL[:-1]
@@ -56,6 +57,33 @@ class DocumentationContractTests(unittest.TestCase):
         for filename in CANONICAL[3:]:
             with self.subTest(file=filename):
                 self.assertIn(Path(filename).name, agent)
+
+    def test_agents_require_dynamic_live_state_refresh(self):
+        agent = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        for phrase in (
+            "Mandatory dynamic project-state refresh",
+            "git status --short --branch",
+            "git log -20",
+            "open PRs",
+            "open issues",
+            "Partially implemented",
+            "Deprecated/retired",
+            "Historical",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, agent)
+
+    def test_project_state_is_dated_and_tracks_current_open_gaps(self):
+        state = (ROOT / "docs/PROJECT_STATE.md").read_text(encoding="utf-8")
+        for phrase in (
+            "not a live status API",
+            "a40c01173df425aa94c445e7e221fd61f8e7fb34",
+            "issues/46",
+            "issues/54",
+            "Not inspected or changed during this documentation review",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, state)
 
     def test_roadmap_does_not_present_placeholder_commands_as_delivered(self):
         roadmap = (ROOT / "docs/ROADMAP.md").read_text(encoding="utf-8")
