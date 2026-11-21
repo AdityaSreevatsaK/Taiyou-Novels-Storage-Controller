@@ -125,7 +125,8 @@ def remote_backup(api, backup_repo: str, token: str, *, source_repo: str = DEFAU
         # Small ordinary Git objects may be transferred internally by the API.
         ops = [CommitOperationCopy(
             src_path_in_repo=original, path_in_repo=destination,
-            src_revision=source_rev, src_repo_id=source_repo)
+            src_revision=source_rev, src_repo_id=source_repo,
+            src_repo_type="dataset")
             for original, destination in chunk]
         result = api.create_commit(
             repo_id=backup_repo, repo_type="dataset", token=token,
