@@ -2,7 +2,7 @@
 setlocal
 cd /d "%~dp0"
 if /I "%~1"=="--help" goto :help
-call "%~dp019_command_output.cmd" start "Novel source metadata"
+call "%~dp0console_output.bat" start "Novel source metadata"
 echo 1. Audit ALL novels for missing source synopsis, genres and status (READ ONLY)
 echo 2. Prepare JSON for ONE novel (READ ONLY)
 echo 3. Preview an existing repair JSON (READ ONLY)
@@ -78,7 +78,7 @@ goto :finish
 
 :finish
 set "result=%errorlevel%"
-call "%~dp019_command_output.cmd" end "Novel source metadata" "%result%"
+call "%~dp0console_output.bat" end "Novel source metadata" "%result%"
 if /I "%~1"=="--help" exit /b %result%
 echo.
 pause
