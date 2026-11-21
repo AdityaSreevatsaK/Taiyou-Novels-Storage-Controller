@@ -14,6 +14,7 @@ from pathlib import Path
 import sys
 
 from .core import DEFAULT_REPO
+from .console_summary import print_summary
 
 EMPTY_CATALOGUE = {"version": 1, "books": []}
 MAX_FILES = 5000
@@ -56,7 +57,8 @@ def backup_data(repo: str, revision: str, files: list[str],
     dest.mkdir(parents=True, exist_ok=False)
     entries = []
     for index, relative in enumerate(files, 1):
-        print(f"BACKUP [{index}/{len(files)}] {relative}", flush=True)
+        if index == 1 or index % 50 == 0 or index == len(files):
+            print(f"  Backup progress: {index}/{len(files)} files", flush=True)
         cached = Path(hf_hub_download(
             repo_id=repo, repo_type="dataset", filename=relative,
             revision=revision, token=token))
@@ -139,17 +141,14 @@ def run(argv=None) -> int:
         if "data/library.json" not in all_paths:
             raise ResetError("Required data/library.json missing; unknown layout")
         paths = select_data_files(all_paths)
-        print("\nPRIVATE DATASET RESET PREVIEW")
-        print("Dataset:", args.repo)
-        print("Revision:", revision)
-        print("Files affected:", len(paths))
-        print("ALL novel ZIPs, EPUBs, covers, progress, personal reviews and collections")
-        print("stored under data/ will be removed. Dataset repository remains in place.")
-        print("Git/LFS history may still contain previous content.")
-        for path in paths:
-            print(" -", path)
+        print_summary("PRIVATE DATASET RESET PREVIEW", {
+            "Files affected": len(paths),
+            "Revision": revision[:12],
+            "Impact": "ALL novel files and personal data in data/",
+            "Safety": "Full verified local backup and two confirmations required",
+        }, note="Preview only. The private Hugging Face dataset remains unchanged.",
+            status="PREVIEW")
         if not args.apply:
-            print("PREVIEW ONLY. No backups or changes were made.")
             return 0
         if not sys.stdin.isatty():
             raise ResetError("Reset requires an interactive console; CI cannot execute it")
@@ -162,15 +161,21 @@ def run(argv=None) -> int:
         destination, manifest = backup_data(args.repo, revision, paths, token, root)
         if manifest["count"] != len(paths) or not manifest["files"]:
             raise ResetError("Backup incomplete; no files deleted")
-        print("\nVERIFIED local backup:", destination.resolve())
+        print_summary("Reset backup verified", {
+            "Files checked": manifest["count"],
+            "Destination": destination.resolve(),
+        }, note="No cloud files deleted yet.", status="BACKUP VERIFIED")
         phrase = f"ERASE {len(paths)} FILES {revision[:12]}"
         if input("Type " + phrase + " to permanently clear current data/: ").strip() != phrase:
             print("Cancelled: backup preserved, no remote changes")
             return 2
         perform_reset(api, args.repo, token, revision, paths)
-        print("DONE: private dataset data/ reset; empty library.json saved.")
-        print("BACKUP:", destination.resolve())
-        print("Cached books on other devices may remain until refreshed.")
+        print_summary("Private library reset completed", {
+            "Files removed from current data/": len(paths),
+            "Empty catalogue created": "Yes",
+            "Verified backup": destination.resolve(),
+        }, note="Cached books on other devices may remain until refreshed.",
+            status="COMPLETED")
         return 0
     except (ResetError, OSError, EOFError, ValueError, RuntimeError) as exc:
         print("ERROR:", exc, file=sys.stderr)
