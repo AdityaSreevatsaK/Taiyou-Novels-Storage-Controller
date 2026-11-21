@@ -58,7 +58,8 @@ Local prerequisites: Python, installed requirements, HF login/token with *the mi
 | --- | --- | --- |
 | Repo ID, catalogue validation, hashing, duplicate listing | `taiyou_storage/core.py` | HF source repo and schema-1 catalogue contract |
 | Safe legacy/readable novel folder paths | `taiyou_storage/paths.py` | Book ID and current display title are distinct |
-| Local list, conflict, status, download and catalogue backup | `taiyou_storage/cli.py` | Read-only HF operations and local files |
+| Local list, conflict, status and catalogue backup | `taiyou_storage/cli.py` | Read-only catalogue operations and local files |
+| Original ZIP download/export | `taiyou_storage/downloads.py` | Retrieves the catalogue-declared original archive paths |
 | Novel ZIP and EPUB parsing, planning and upload | `taiyou_storage/upload.py` | Strong equality, edition ambiguity, Xet-compatible staging and guarded writes |
 | Multi-novel batching and local cover discovery | `taiyou_storage/bulk_batch.py` | Up to 10 novel targets per atomic commit; matches only supplied local `covers/` assets |
 | Local ZIP duplicate equivalence | `taiyou_storage/local_dedupe.py` | Opt-in verified duplicate skipping; materially different editions block the batch |
@@ -70,7 +71,7 @@ Local prerequisites: Python, installed requirements, HF login/token with *the mi
 | GitHub privacy-safe combined inspection | `taiyou_storage/github_checks.py` | Publishes numeric counts only |
 | Optional inspection manifest backfill | `taiyou_storage/manifest_backfill.py` | **Mutating**, preview-only by default |
 | Selective local cache deletion | `taiyou_storage/inspection_cleanup.py` | Never removes remote HF files |
-| Local full-library reset | `taiyou_storage/reset.py` | Private, verified local backup and typed confirmations |
+| Local data-tree reset | `taiyou_storage/reset.py` | Clears only HF `data/` contents after verified local backup and typed confirmations; never deletes the repository |
 | Manual private backup and report entry points | `taiyou_storage/actions.py` | No broad delete Action |
 | Remote-first snapshot identity and copy | `taiyou_storage/remote_backup.py` | Source/destination immutable object identities |
 | Read-only backup and source readiness | `taiyou_storage/cloud_readiness.py` | No actual copy verification until backup runs |
@@ -81,7 +82,7 @@ Local prerequisites: Python, installed requirements, HF login/token with *the mi
 | Historical genre restoration | `taiyou_storage/genre_repair.py` | Optional and dependent on old artifact evidence |
 | Concise local reporting | `taiyou_storage/console_summary.py` | Clear preview, complete, blocked or failed statuses |
 | Restricted public Actions output | `taiyou_storage/github_output.py` | Fixed task/metric allowlist; raw private output stays on ephemeral runner |
-| Historical folder migration | `taiyou_storage/migrate_folders.py`, `migrate_production.py`, `scripts/verify_disposable_folder_migration.py` | Retained source/tests for history; one-shot production workflows are retired |
+| Historical folder migration | `taiyou_storage/migrate_folders.py`, `taiyou_storage/migrate_production.py`, `scripts/verify_disposable_folder_migration.py` | Retained source/tests for history; one-shot production workflows are retired |
 | Windows command frontends | `00_storage_menu.cmd`, `01_bulk_upload.cmd` to `18_repair_novel_metadata.cmd` | Business logic belongs in Python, not CMD |
 | Offline safety and functional regression | `tests/` | Use matching tests and full CI matrix for changes |
 
