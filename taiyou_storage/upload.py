@@ -5,6 +5,7 @@ Remote writes require --apply. CI never uses network or credentials.
 """
 from __future__ import annotations
 
+from collections import Counter
 import argparse
 import hashlib
 import io
@@ -453,6 +454,12 @@ def main(argv=None) -> int:
     parser.add_argument("folder", nargs="?", default="novels")
     parser.add_argument("--repo", default=DEFAULT_REPO)
     parser.add_argument("--recursive", action="store_true")
+    parser.add_argument("--covers-folder", type=Path, default=Path("covers"),
+                        help="Match local JPG/PNG/WebP covers to these novels (default: covers/)")
+    parser.add_argument("--no-covers", action="store_true",
+                        help="Skip automatic cover discovery in covers/")
+    parser.add_argument("--batch-size", type=int, default=10,
+                        help="Novels per atomic HF commit (1-10, default 10)")
     parser.add_argument("--dedupe-local", action="store_true",
                         help="Opt-in read-only preflight: skip verified equivalent local ZIPs; block conflicting editions")
     parser.add_argument("--readable-folders", action="store_true",
@@ -467,6 +474,8 @@ def main(argv=None) -> int:
     parser.add_argument("--verbose", action="store_true",
                         help="Also print individual ZIP decisions")
     args = parser.parse_args(argv)
+    if not 1 <= args.batch_size <= 10:
+        parser.error("--batch-size must be between 1 and 10")
     directory = Path(args.folder)
     if not directory.is_dir():
         print(f"Missing directory: {directory}", file=sys.stderr)
@@ -591,11 +600,41 @@ def main(argv=None) -> int:
                 return 2
         instructions = plan(books, local, hashes, files,
                             readable_new=(not args.legacy_new_folders or args.readable_folders))
-        preview_rows.extend(_plan_row(item["path"].name, item["state"], item["reason"])
-                            for item in instructions)
+        from .bulk_batch import discover_covers, cover_status
+        cover_rows, cover_problems = (
+            discover_covers(instructions, args.covers_folder)
+            if not args.no_covers else ([], []))
+        # Only download the cover images that already occupy a proposed
+        # destination; skip all other remote covers and novel artifacts.
+        for item in instructions:
+            cover = item.get("cover")
+            if not cover:
+                continue
+            dest = cover["destination"]
+            if dest in files and dest not in hashes:
+                remote_file = hf_hub_download(
+                    repo_id=args.repo, filename=dest, repo_type="dataset",
+                    revision=sha)
+                hashes[dest] = sha256_file(Path(remote_file))
+            if (dest in files and
+                    (item.get("existing") or {}).get("metadata", {}).get("coverPath") != dest
+                    and hashes.get(dest) != cover["sha256"]):
+                cover_problems.append(_plan_row(
+                    cover["path"], "COVER_CONFLICT",
+                    "Unlinked remote cover already exists at destination; review before overwrite"))
+        cover_states = Counter()
+        for item in instructions:
+            if item.get("cover"):
+                cover_states[cover_status(item, files, hashes)] += 1
+        preview_rows.extend(_plan_row(
+            item["path"].name, item["state"],
+            item["reason"] + ((" + cover " + cover_status(item, files, hashes))
+                              if item.get("cover") else ""))
+            for item in instructions)
+        preview_rows.extend(cover_problems)
         _save_upload_plan(args.report, preview_rows)
-        from collections import Counter
         planned = Counter(item["state"] for item in instructions)
+        planned["CONFLICT"] += len(cover_problems)
         if args.verbose:
             for item in preview_rows:
                 print(f"[{item['state']}] {item['file']}: {item['reason']}")
@@ -605,6 +644,11 @@ def main(argv=None) -> int:
             "New novels to upload": planned["NEW"],
             "Existing novels to update": planned["UPDATE"],
             "Unchanged novels": planned["UNCHANGED"],
+            "Matched local covers": len(cover_rows),
+            "New covers": cover_states["NEW"],
+            "Updated covers": cover_states["UPDATE"],
+            "Covers to link": cover_states["LINK"],
+            "Unchanged covers": cover_states["UNCHANGED"],
             "Equivalent ZIPs skipped": len(duplicates),
             "Conflicts detected": planned["CONFLICT"],
         }, reports=[args.report],
@@ -627,23 +671,47 @@ def main(argv=None) -> int:
             raise UploadError("No Hugging Face token configured")
         if api.dataset_info(args.repo, token=token).sha != sha:
             raise UploadError("Dataset changed since preview; no writes performed")
+        from .bulk_batch import commit_batch
+        # One remote catalogue read at the approved revision. Subsequent
+        # groups carry the in-memory catalogue forward, avoiding N complete
+        # read/list/commit round trips for N books.
+        if "data/library.json" in files:
+            remote_catalogue = hf_hub_download(
+                repo_id=args.repo, filename="data/library.json",
+                repo_type="dataset", revision=sha, token=token)
+            catalogue = json.loads(Path(remote_catalogue).read_text(encoding="utf-8-sig"))
+            validate_catalogue(catalogue)
+        else:
+            catalogue = {"version": 1, "books": []}
+        # Prevent preview/apply drift even if the same SHA were reused by a
+        # faulty/mocked backend.
+        if {book["id"] for book in catalogue["books"]} != {book["id"] for book in books}:
+            raise UploadError("Remote catalogue differs from approved preview")
+        changing = [
+            item for item in instructions
+            if item["state"] in {"NEW", "UPDATE"} or
+            (item.get("cover") and cover_status(item, files, hashes) != "UNCHANGED")
+        ]
         expected = sha
         applied = Counter()
-        for item in instructions:
-            if item["state"] != "UNCHANGED":
-                status, expected = apply_item(
-                    api, args.repo, token, item,
-                    expected_revision=expected, return_revision=True)
-                applied[status] += 1
-                if args.verbose:
-                    print(f"[{status}] {item['path'].name}")
+        for offset in range(0, len(changing), args.batch_size):
+            group = changing[offset:offset + args.batch_size]
+            catalogue, expected, counts = commit_batch(
+                api, args.repo, token, group, revision=expected,
+                catalogue=catalogue, remote_files=files, remote_hashes=hashes)
+            applied.update(counts)
+            if args.verbose:
+                print(f"[BATCH] {len(group)} novel/cover entries committed")
         print_summary("Bulk upload completed", {
-            "New novels uploaded": planned["NEW"],
-            "Existing novels updated": planned["UPDATE"],
+            "New novels uploaded": applied["new"],
+            "Existing novels updated": applied["updated"],
             "Unchanged novels": planned["UNCHANGED"],
+            "Covers uploaded": applied["covers"],
+            "Covers linked": cover_states["LINK"],
             "Equivalent ZIPs skipped": len(duplicates),
             "Conflicts detected": 0,
-            "Changes applied": sum(applied.values()),
+            "Changes applied": applied["new"] + applied["updated"],
+            "HF commit batches": (len(changing) + args.batch_size - 1) // args.batch_size,
         }, reports=[args.report], note="Private HF dataset updated only for approved changes.")
         return 0
     except Exception as exc:
