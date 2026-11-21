@@ -10,8 +10,9 @@ versioned releases.
   module ownership, incidents/lessons, operational deployment and realistic roadmap.
 - Add a current zero-context AI agent playbook and short root AGENTS.md; archive the
   old comprehensive handbook for historical provenance instead of losing details.
-- Cross-link current documents from the root README and documentation index;
-  mark retired migration workflows and non-working restore/delete launchers clearly.
+- Add a dated project-state ledger and mandatory live Git/source/PR/issue inspection instructions for future agents; classify implemented, partial, planned, deprecated and historical capabilities.
+- Align architecture and roadmap with the current batch uploader, local cover matching, remote-first backup and cloud import implementation; explicitly track open embedded-cover extraction and Hiatus/Dropped status issues.
+- Mark old migration acceptance instructions as historical, clarify that repository deletion is forbidden while the local `data/` content reset remains guarded, and enforce `master`/repository/concurrency guards on all private HF workflows.
 
 - Add private, revision-pinned, read-only inventory, cover audit, Retriever comparison, integrity verification and HTML health report.
 - Add offline regression tests, bounded concurrent deep scanning and revision-keyed local cache; no HF write operations.
