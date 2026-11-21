@@ -146,7 +146,7 @@ def run(argv=None) -> int:
             "Revision": revision[:12],
             "Impact": "ALL novel files and personal data in data/",
             "Safety": "Full verified local backup and two confirmations required",
-        }, note="Preview only. The private Hugging Face dataset remains unchanged.",
+        }, note="PREVIEW ONLY. The private Hugging Face dataset remains unchanged.",
             status="PREVIEW")
         if not args.apply:
             return 0
