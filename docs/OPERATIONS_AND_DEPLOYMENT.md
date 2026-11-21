@@ -27,7 +27,7 @@ Read-only inspection mode differences: `quick` remote metadata/listings, `manife
 
 ## GitHub Actions workflows
 
-Open the repository **Actions** tab and choose the supported manual workflow on `master`:
+Open the repository **Actions** tab and choose the supported manual workflow on `master`. Private HF workflows are intended to run only from this repository's `master` branch; the workflow jobs must enforce both the repository identity and `refs/heads/master`, rather than relying on the operator to select the correct ref. They also share the `hf-storage-controller` Actions concurrency group to reduce overlap between controller workflows. This does **not** lock out local scripts, the Reader, or other repositories.
 
 | Workflow file | Mode and outcome | Security boundary |
 | --- | --- | --- |
@@ -41,7 +41,9 @@ Open the repository **Actions** tab and choose the supported manual workflow on 
 | `hf-restore-genres.yml` | Optional historical missing-source-fields repair | Source proof and additive catalogue change |
 | `release.yml` | Code-only release after successful current `master` CI | No private HF assets or tokens |
 
-See [GitHub Actions guide](GITHUB_ACTIONS.md) for exact workflow input names. **No active GitHub Action may delete the entire production dataset.** One-shot readable-folder migration workflows have been retired. A similarly named historical YAML path in older docs is **not** an executable option.
+See [GitHub Actions guide](GITHUB_ACTIONS.md) for exact workflow input names. **No active GitHub Action may delete the HF repository or clear production data.** The repository-delete operation is forbidden; the remaining local reset clears only the `data/` content tree after a complete verified local backup and typed confirmations. One-shot readable-folder migration and 104-cover recovery workflows have been retired. A similarly named historical YAML path in older docs is **not** an executable option.
+
+The active workflow inventory is tested by `tests/test_github_workflow_cleanup.py`. Any HF workflow that can read or write private data must be restricted to the exact repository and `master` ref, use least-privilege permissions, share the controller concurrency group, and avoid public artifacts containing private records. Re-check the actual YAML before every dispatch because workflow names and guards can change.
 
 ### Secrets and least privilege
 
@@ -80,6 +82,8 @@ Never place secrets into CLI arguments printed by CI, test output, public JSON s
 ### Investigate incomplete metadata or missing covers
 
 - Use source-metadata audit/repair or cover audit in read-only mode first.
+- The normal uploader can attach uniquely matched **local sidecar images** from `covers/`; it does not yet extract authentic embedded ZIP/EPUB artwork and publish a standalone `coverPath` in the same upload ([open issue #54](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/54)).
+- Metadata parser and validator currently support only `Completed` and `Ongoing`; `Hiatus` and `Dropped` are tracked as incomplete work in [issue #46](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/46).
 - Research missing fields from authorised source information pages; review exact unique book ID/source URL before change. A proposed import JSON is not automatically verified.
 - Make only additive changes, with preview hash, private pre-change catalogue backup and current HF revision checks.
 - If the reader does not display data that is present in HF, debug the **Reader's separate** gateway/cache/UI before rewriting storage.
@@ -125,4 +129,4 @@ Deployment of controller changes means merging code to `master`, and the user pu
 
 A change is *implemented* when code/docs are on the proposed branch. It is *merged* when GitHub reports an actual merge commit. It is *verified* when the expected CI job conclusions are successful for the relevant SHA. It is *live applied* **only** when an authorised real HF operation has completed and the remote result has been independently confirmed. Keep these states separate in final reports.
 
-Related: [Architecture](ARCHITECTURE.md), [Incidents](FAILURES_AND_LESSONS.md), [Agent playbook](AI_AGENT_PLAYBOOK.md), [Output rules](OUTPUT_CONVENTIONS.md).
+Related: [Architecture](ARCHITECTURE.md), [Incidents](FAILURES_AND_LESSONS.md), [Agent playbook](AI_AGENT_PLAYBOOK.md), [Dated project state](PROJECT_STATE.md), [Output rules](OUTPUT_CONVENTIONS.md).
