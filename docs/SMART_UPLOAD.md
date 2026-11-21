@@ -5,10 +5,9 @@ The Python uploader defaults to read-only preview; use `--interactive` to
 preview and confirm in one process, or `--apply` for an explicitly authorised
 non-interactive write. Pass `--repo OWNER/PRIVATE-DATASET` to change target.
 
-The controller:
-The bulk uploader now passes on-disk paths to Hugging Face for **all** commit
+The controller passes on-disk paths to Hugging Face for **all** commit
 operations. Generated EPUB, catalogue and inspection-manifest files are staged
-temporarily per novel commit; the original ZIP is used directly from disk.
+temporarily per batch commit; the original ZIP is used directly from disk.
 This avoids the `BytesIO`-triggered Xet-to-HTTP fallback. Temporary staging
 files are removed after success, failure or a revision-conflict retry. It does
 not change the existing approval, private-repository and parent-revision checks.
@@ -17,10 +16,10 @@ Xet availability still depends on Hugging Face and your local environment.
 - Validates ZIP CRC, EPUB structure, JSON, entry counts, expanded-size budgets and file-size limits.
 - Matches existing catalogue entries by exact EPUB hash-derived ID, or by unique normalised title **and** author.
 - Preserves an existing novel ID when EPUB content changes.
-- Reconciles `original.zip`, `source.epub` and `data/library.json` in one optimistic-concurrency-checked commit, uploading only binary artifacts whose contents differ.
+- Reconciles `original.zip`, `source.epub`, covers (when present) and `data/library.json` in atomic batches of up to 10 novels; uploads only binary artifacts whose contents differ.
 - Preserves existing personal metadata fields, including progress, ratings, personal tags and notes, where stored in book metadata. Missing source tags from older ZIPs do not erase existing nonempty source genres.
 - Skips only when ZIP, EPUB and source-managed metadata are all equivalent; refuses ambiguous matches and public target datasets.
-- Rechecks the remote catalogue immediately before each write; same-process Windows confirmation and revision-guarded multi-book application reject plan drift.
+- Reads the remote catalogue once per approved batch run, carrying forward verified in-memory changes; uses pinned revisions and HF parent-commit checks to reject concurrent modifications.
 - Downloads and hashes only the remote artifacts corresponding to the novels supplied in the current local batch.
 
 **Limitations:** A changed title and EPUB simultaneously cannot be matched reliably
@@ -32,10 +31,57 @@ titles; inspect previews before applying.
 
 CI is completely offline. No Hugging Face dataset modifications occur during tests.
 
+## Fast batching and automatic local covers
+
+**Default Windows layout:**
+
+```text
+Taiyou-Novels-Storage-Controller/
+  novels/
+    Novel One.zip
+    Novel Two.zip
+  covers/
+    Novel One.jpg
+    Novel Two.png
+```
+
+Start `01_bulk_upload.cmd`. The uploader previews both folders, checks the
+cover images, matches by exact normalised title, local ZIP basename or stable
+24-character novel ID, then uploads the novels and their matched covers
+**together in the same revision-guarded commit**. A nested
+`covers/Novel One/cover.jpg` or `covers/<novel-id>/cover.png` is also valid.
+Covers are optional. No images are downloaded from the internet automatically.
+
+Unmatched, ambiguous, duplicate, invalid or unexpectedly conflicting covers
+are shown as `COVER_CONFLICT` in `reports/bulk-upload-plan.csv`; **all writes
+are blocked**. There is no fuzzy matching. Move unrelated covers out of
+`covers/` or use `--no-covers` when you intend a novels-only upload. Existing
+differently named cover references cannot be silently replaced.
+
+The default `--batch-size 10` means ten new novels plus ten covers generally
+require **one Hugging Face commit**, instead of ten. Each batch retains one
+catalogue update, safe source-managed metadata merges, per-book inspection
+sidecars and parent-commit concurrency protection. Bandwidth for the original
+ZIP and EPUB bytes is still required, so wall-clock speed depends on file
+size and network upload rates. Previous batches remain committed if a later
+batch fails; re-run the same folders to resume.
+
+Run explicitly:
+
+```powershell
+py -m taiyou_storage.upload novels --covers-folder covers --batch-size 10 --dedupe-local --interactive
+```
+
+Skip covers only when intentional:
+
+```powershell
+py -m taiyou_storage.upload novels --no-covers --interactive
+```
+
 ## Consecutive commit revision checks
 
-For a multi-novel upload, each successful `create_commit` returns an immutable
-commit SHA. The next novel now loads and verifies the dataset **at that exact
+For a multi-novel upload, each successful batch `create_commit` returns an immutable
+commit SHA. The next batch verifies the dataset **at that exact
 revision**, instead of trusting a possibly delayed `main`-branch SHA response.
 If Hugging Face has not yet indexed that specific commit, the uploader makes
 four short, bounded read-only retries (no repeated writes).
@@ -45,7 +91,7 @@ A different writer advancing `main` causes the server to reject the write:
 the uploader stops and asks for a fresh preview. It never silently rebases
 an approved plan or overwrites another writer's changes.
 
-Previously committed novels are preserved if a run stops. Re-run the same
+Previously committed batches are preserved if a run stops. Re-run the same
 ZIP set to skip completed items. No local ZIPs are deleted.
 
 ## First upload to a newly recreated Hugging Face dataset
