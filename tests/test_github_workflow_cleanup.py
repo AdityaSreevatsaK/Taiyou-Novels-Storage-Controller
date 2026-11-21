@@ -38,7 +38,7 @@ class GitHubWorkflowCleanupTests(unittest.TestCase):
                 )
                 self.assertIn("github.ref == 'refs/heads/master'", yml)
                 self.assertIn("group: hf-storage-controller", yml)
-                self.assertEqual(yml.count("\\nconcurrency:"), 1)
+                self.assertEqual(sum(line == "concurrency:" for line in yml.splitlines()), 1)
                 self.assertIn("cancel-in-progress: false", yml)
 
     def test_private_checks_are_explicit_read_only_and_do_not_upload_artifacts(self):
