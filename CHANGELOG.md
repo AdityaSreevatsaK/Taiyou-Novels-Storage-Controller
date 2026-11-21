@@ -17,6 +17,20 @@ versioned releases.
 - Add private, revision-pinned, read-only inventory, cover audit, Retriever comparison, integrity verification and HTML health report.
 - Add offline regression tests, bounded concurrent deep scanning and revision-keyed local cache; no HF write operations.
 
+### Post-v0.1.0 engineering additions (November 2026)
+
+- Add revision-guarded multi-novel upload batches, local duplicate/edition detection and optional matching of separately supplied local `covers/` images.
+- Add manifest-validated standalone cover artifact imports with unique source/book identity matching, bounded commits and safe resume after partial success.
+- Complete and verify the one-time 104-cover recovery; retire its temporary workflow after completion.
+- Recognise rigorously verified EPUB-only chapter layouts in read-only inspection; distinguish optional source URLs from missing required title/author data.
+- Add additive source-metadata discovery, researched JSON import, review-bound batch approvals and catalogue-only repairs with private pre-change backup.
+- Add cloud-only import of completed Novel-Retriever export bundles after manifest and per-ZIP SHA-256 verification.
+- Add remote-first private HF snapshots using remote cryptographic object identities, plus an explicit full-verified runner fallback and a read-only readiness check.
+- Standardise concise Windows START / summary / END output and allowlisted count-only GitHub Actions summaries.
+- Complete the protected readable-folder production migration (89/89) and retire its one-shot workflows; retain dual-format path compatibility.
+
+**Still incomplete:** automatic extraction of embedded ZIP/EPUB cover art during normal bulk upload ([#54](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/54)) and canonical `Hiatus` / `Dropped` source publication statuses ([#46](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/46)).
+
 ## [v0.1.0] — 2026-11-11
 
 **First verified Storage Controller milestone.**
