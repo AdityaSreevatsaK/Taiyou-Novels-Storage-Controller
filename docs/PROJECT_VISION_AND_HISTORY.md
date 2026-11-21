@@ -30,7 +30,10 @@ The initial product idea evolved from a simple bulk uploader into a storage main
 | 14 November | Production folder migration | Verified 89/89 readable folders, 0 conflicts, 221-file SHA-256-verified private backup and independent read-only post-migration audit; retired one-shot migration Actions |
 | 17 November | Existing inspection/download commands were insufficient for library-scale verification | Add common revision-pinned read-only inspector, quick/manifest/deep evidence levels, chapter inventory, cover audit, health report, local Retriever comparison and owned cache cleanup |
 | 18 November | Earlier Retriever packages omitted source genres/synopses/status even though personal fields were intact | Add additive, source-identity-checked metadata audit and repair, researched JSON import, review/approval digests and one revision-guarded catalogue commit with a private backup |
+| 19 November | Deep inspection misclassified EPUB-only chapter layouts; missing covers and optional source URLs needed more precise interpretation | Recognise EPUB-only chapters only when strict ZIP/EPUB hashes, chapter positions and readable XHTML evidence agree; distinguish absent optional source URLs from missing title/author; recover 104 authentic covers through a one-time artifact workflow, then retire that workflow |
 | 20-21 November | Uploading many completed downloads through a local machine was inefficient | Introduce cloud-only import of verified completed Novel-Retriever export artifacts, bounded resumable uploads, read-only cloud readiness and remote-first private HF snapshots with cryptographic object verification |
+| 21 November | Matching sidecar images and repeated single-novel commits were inefficient | Add multi-novel atomic batches and automatic discovery of uniquely matched local `covers/` images; embedded ZIP/EPUB cover extraction remains a separate open requirement |
+| 21 November | Uploading and inspection output was too verbose | Standardise START/summary/END output for Windows commands, fixed numeric allowlists and GitHub Step Summary tables; preserve detailed private diagnostics and safety prompts |
 | 21 November | Hundreds of log lines obscured outcomes and risked leaking private details | Standardise START/summary/END output for Windows commands, fixed numeric allowlists and GitHub Step Summary tables; preserve detailed private diagnostics and safety prompts |
 
 The November migration audit is recorded in [post-migration verification](POST_MIGRATION_VERIFICATION_2026-11-14.md); the test dataset boundaries are in [cross-repository acceptance history](CROSS_REPO_READABLE_FOLDER_ACCEPTANCE.md). Historical novel and cover counts describe specific snapshots, **not the current live catalogue size**.
@@ -49,7 +52,9 @@ The November migration audit is recorded in [post-migration verification](POST_M
 | Count-only public logs with private local reports | Detailed public per-book output, JSON dumps | Clear terminal UX while protecting catalogue and personal data |
 | Separate Retriever, controller and Reader repositories | One application handling scraping, storage and UI | Domain boundaries and independent release/permission models |
 
-Earlier exploratory designs considered abstract storage adapters and a generic framework. The **implemented** code is an HF-specific private-dataset controller. Do not describe mock/in-memory clients as a production-pluggable provider interface. Likewise, a proposal to simplify deletion to a checkbox was not retained: the current safety requirement is backup-first, revision-guarded and typed confirmation. Historical requests to remove the full-dataset clearing menu option do not override the **current** local-only, guarded reset implementation; assess the latest explicit owner decision before changing it.
+Earlier exploratory designs considered abstract storage adapters and a generic framework. The **implemented** code is an HF-specific private-dataset controller. Do not describe mock/in-memory clients as a production-pluggable provider interface.
+
+**Deletion decision:** deleting the Hugging Face repository itself was explicitly removed after an accidental dataset deletion. Repository deletion is not a supported feature and must never be reintroduced. A separate, deliberately retained `11_clear_hf_data.cmd` clears only the dataset's `data/` content tree, locally, after a complete SHA-256-verified local backup, fresh revision checks and multiple typed confirmations. Do not conflate clearing the data tree with deleting the HF repository. Never offer a GitHub Action for either destructive operation.
 
 ## Ecosystem boundaries
 
@@ -58,6 +63,8 @@ Earlier exploratory designs considered abstract storage adapters and a generic f
 - **Reader and UI:** [Taiyous-Personal-Library](https://github.com/AdityaSreevatsaK/Taiyous-Personal-Library), deployed separately through Cloudflare Pages/Functions with HF OAuth. The controller does not own themes, reading progress UX, shelf filters or reader API fan-out.
 - **Backups:** independent private HF destination, normally `AdityaSreevatsaK/Taiyous-Novels-Backup`, and local backup files for a full reset.
 - **Manga:** a separate Manga Storage Controller follows some analogous conventions; manga schema and page manifests **must not** be applied to novel `version: 1, books: [...]` data.
+
+The controller currently has two explicitly tracked incomplete requirements: embedded cover extraction into `coverPath` during normal bulk upload ([issue #54](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/54)), and canonical `Hiatus` / `Dropped` source publication statuses ([issue #46](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/46)). See [the dated state ledger](PROJECT_STATE.md), and refresh the issue status before implementation.
 
 A cross-repository change is not complete when its local tests pass. Validate both producer and consumer contracts, including reader paths, metadata fields and permissions.
 
