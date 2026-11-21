@@ -51,7 +51,9 @@ class CloudImportTests(unittest.TestCase):
         with TemporaryDirectory() as temp:
             root = Path(temp)
             make_bundle(root)
-            (root / "novels" / "novel-00.zip").write_bytes(b"modified")
+            target = root / "novels" / "novel-00.zip"
+            original = target.read_bytes()
+            target.write_bytes(original[:-1] + b"X")
             with self.assertRaisesRegex(BundleError, "SHA-256"):
                 check_bundle(root)
 
