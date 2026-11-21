@@ -37,7 +37,12 @@ Use the menu for additional catalogue, conflict, chapter, sync and comparison ut
 
 ## Run checks on GitHub
 
-Use [**HF - Run library checks (read only)**](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/workflows/hf-inspect.yml) to run a private-library audit from GitHub Actions. Choose **manifest** for lightweight checks or **deep** for downloaded-content inspection. Public logs show counts only, never novel titles or reports.
+Run storage maintenance directly from **GitHub Actions** without downloading novels to your laptop:
+
+- [**HF - Run library checks (read only)**](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/workflows/hf-inspect.yml): choose **quick** for remote listings only, **manifest** for lightweight sidecars, or **deep** for content validation on an ephemeral cloud runner.
+- [**HF - Back up entire dataset PRIVATELY**](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/workflows/hf-private-backup.yml): default **remote-first** copies source objects to a different private HF dataset and verifies object identities, with **full-verified** as an explicit runner-based fallback.
+
+GitHub Actions logs show counts only, never novel titles, private paths or reports. New novel ZIPs stored only on your Windows laptop still need an initial upload; local download/export tools remain available.
 
 ## Documentation
 
