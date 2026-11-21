@@ -16,6 +16,32 @@
 
 ---
 
+## Console and GitHub Actions output convention, 21 November 2026
+
+All user-invoked Windows commands should use the internal
+`console_output.bat` helper for a short start/result/end, while the Python
+entrypoints use `console_summary.print_summary` for labelled metrics, private
+report paths and a clear preview/completed/blocked status. Keep the numbered
+root `.cmd` launcher set at **00-18**, because menu alignment and pause
+semantics are regression-tested; do not add helper CMDs alongside them.
+
+GitHub Actions run non-interactive private HF commands through
+`taiyou_storage.github_output`, which captures detailed stdout/stderr in the
+temporary runner, allows only fixed numeric metrics into PUBLIC logs, prints
+START/END, and writes a Markdown table to `GITHUB_STEP_SUMMARY`. Add a
+specific fixed task label and allowlisted fields when extending this runner.
+Do not echo raw private commands, EPUB/ZIP paths, source URLs, novel titles,
+tokens, reports or exception messages to GitHub.
+
+Do not hide required confirmations, critical warnings or failed exit codes.
+Differentiate actual deleted **files** from legacy shared-cache **entries** and
+estimated recoverable bytes. User-visible output is concise by default;
+per-novel diagnostic detail belongs in Git-ignored local reports or the
+optional `--verbose` mode. Never replace an authentic storage operation with
+a fake summary solely to reduce logging.
+
+See [docs/OUTPUT_CONVENTIONS.md](docs/OUTPUT_CONVENTIONS.md).
+
 ## Source metadata audit and repair, 18 November 2026
 
 The independent `taiyou_storage/metadata_repair.py` workflow provides a local
