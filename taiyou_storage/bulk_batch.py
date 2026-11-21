@@ -129,7 +129,8 @@ def commit_batch(api, repo: str, token: str, items: list[dict], *,
         raise UploadError("Batch must contain 1 to 10 novel entries")
     _pinned_dataset_info(api, repo, token, revision)
     proposed = deepcopy(catalogue)
-    books = validate_catalogue(proposed)
+    validate_catalogue(proposed)
+    books = proposed["books"]
     counters = {"new": 0, "updated": 0, "covers": 0}
     staged_ops = []
     with TemporaryDirectory(prefix="taiyou-bulk-batch-") as staging:
