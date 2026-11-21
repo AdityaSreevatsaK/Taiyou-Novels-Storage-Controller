@@ -71,8 +71,7 @@ The Reader's Cloudflare OAuth gateway remains separately gated: current
 cross-repository tests mock the authenticated gateway rather than running
 against a live disposable Cloudflare environment.
 
-Reader PR #4 and the Storage Controller compatibility integration must be
-reviewed before a separate, verified-backup production migration is considered.
+Reader PR #4 and the Storage Controller compatibility integration were historical preconditions for the migration. The production folder migration has since completed and was independently verified on 14 November 2026. This document does not authorise or recommend another production migration.
 
 
 ## Verified live acceptance, 13 November 2026
@@ -92,7 +91,7 @@ reviewed before a separate, verified-backup production migration is considered.
 
 ## Consolidation onto current Storage Controller master
 
-This workflow is based on current `master` rather than the historical PR #17 feature branch. It exercises `apply_migration_batch()` in consecutive commits with multiple legacy books in one batch while preserving already-readable books and personal sidecars. It validates the deployed Reader commit `45233f4` and reports success only after all synthetic files are removed. Production remains untouched pending verified full backup, authenticated gateway verification and separately authorised migration.
+This historical workflow was based on the then-current `master` rather than the earlier PR #17 feature branch. It exercised `apply_migration_batch()` in consecutive commits with multiple legacy books while preserving already-readable books and personal sidecars. It validated the deployed Reader commit `45233f4` and reported success only after all synthetic files were removed. **At the time of this test**, production remained untouched pending a verified backup, authenticated gateway verification and separately authorised migration. The production folder migration subsequently completed on 14 November 2026; see [post-migration verification](POST_MIGRATION_VERIFICATION_2026-11-14.md).
 
 
 ## New production-style batch verification
