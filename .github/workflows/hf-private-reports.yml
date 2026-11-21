@@ -30,4 +30,4 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_STORAGE_CONTROLLER_TOKEN }}
           BACKUP_REPO: ${{ inputs.backup_repository }}
           HF_HUB_DISABLE_PROGRESS_BARS: "1"
-        run: python -m taiyou_storage.actions report --backup-repo "$BACKUP_REPO"
+        run: python -m taiyou_storage.github_output --task reports --mode apply -- python -m taiyou_storage.actions report --backup-repo "$BACKUP_REPO"
