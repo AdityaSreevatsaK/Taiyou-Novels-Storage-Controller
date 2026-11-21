@@ -14,7 +14,7 @@ BACKUP = "AdityaSreevatsaK/Taiyous-Novels-Backup"
 
 
 def git_blob(data: bytes) -> str:
-    return sha1(f"blob {len(data)}\\0".encode() + data).hexdigest()
+    return sha1(f"blob {len(data)}".encode() + bytes([0]) + data).hexdigest()
 
 
 class FakeHub:
@@ -142,8 +142,8 @@ class RemoteBackupTests(unittest.TestCase):
         from unittest.mock import patch
         from contextlib import redirect_stdout
         from io import StringIO
-        with patch("huggingface_hub.HfApi", return_value=FakeHub()), \\
-                patch.dict("os.environ", {"HF_TOKEN": "test-token"}):
+        with (patch("huggingface_hub.HfApi", return_value=FakeHub()),
+              patch.dict("os.environ", {"HF_TOKEN": "test-token"})):
             buffer = StringIO()
             with redirect_stdout(buffer):
                 code = main(["backup", "--backup-repo", BACKUP])
