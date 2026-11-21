@@ -1,7 +1,9 @@
-# Cross-repository readable-folder acceptance: pre-created private dataset
+# Historical cross-repository readable-folder acceptance
 
-This is an opt-in integration test for Storage Controller readable-folder support
-and Taiyou's Personal Library Reader PR #4. Production data is **never accessed**.
+> **Historical record only:** the synthetic acceptance completed on 13 November 2026. Its one-shot workflow (`readable-folder-acceptance.yml`), temporary branch and related readiness workflows were retired and are not present on current `master`. Do not try to dispatch, recreate or follow the old branch instructions below as a current procedure. This document preserves the test fixture contract and evidence for future engineers; any new live acceptance requires a fresh design and review.
+
+This was an opt-in integration test for Storage Controller readable-folder support
+and Taiyou's Personal Library Reader PR #4. Production data was **never accessed**.
 
 ## Pre-created dataset, no repository creation or deletion rights
 
@@ -26,23 +28,14 @@ The target `HF_DISPOSABLE_TEST_REPO` is hardcoded in GitHub Actions to
 the Python runner before connecting to Hugging Face. No separate variable or
 secret is required for the dataset name. Do not paste the secret in chat.
 
-## Running acceptance
+## What the historical acceptance workflow did
 
-The workflow `.github/workflows/readable-folder-acceptance.yml`
-executes two jobs on the `test/readable-folder-batch-acceptance-20261113`
-branch and can be rerun via Actions.
+The retired workflow `.github/workflows/readable-folder-acceptance.yml` ran on the temporary branch `test/readable-folder-batch-acceptance-20261113`. It is **not** available from current `master` and cannot be rerun from this repository as documented here.
 
-1. **Contract verification**, without credentials: Storage Controller Python
-   tests and Reader TypeScript and dual-format gateway tests at pinned
-   current deployed Reader commit `45233f4`. Existing CI also runs Windows/Linux with
-   Python 3.11 and 3.12.
-2. **Real Hub acceptance**: Require the dedicated test token. Refuse to
-   continue if the dataset is absent, public or already contains files other
-   than optional `README.md` and `.gitattributes`. No existing files
-   will be overwritten.
+1. Historical contract verification ran Storage Controller Python tests and Reader TypeScript / dual-format gateway tests against a pinned Reader commit. Current controller CI independently runs Windows/Linux with Python 3.11 and 3.12.
+2. Historical live Hub acceptance used the dedicated test-only token and refused to proceed if the pre-created private dataset was absent, public or contained unexpected files.
 
-The second job uploads only fictional materials to the existing private
-dataset and then verifies:
+The historical second job uploaded only fictional materials to the existing private dataset and verified:
 
 - ID-only and readable folder formats coexist with unchanged 24-character IDs.
 - EPUB, original ZIP, cover PNG, auxiliary file and catalogue bytes are
@@ -104,9 +97,9 @@ This workflow is based on current `master` rather than the historical PR #17 fea
 
 ## New production-style batch verification
 
-The latest consolidated acceptance branch adds two further synthetic legacy
+The final consolidated acceptance run added two further synthetic legacy
 books, while retaining an already-readable novel whose title no longer
-matches its folder label. It verifies:
+matched its folder label. It verified:
 
 - **Batch 1:** two legacy books moved in one atomic parent-guarded HF commit.
 - **Batch 2:** a third legacy book moved in a second HF commit.
@@ -120,7 +113,7 @@ matches its folder label. It verifies:
 - Only owned synthetic paths are removed. The pre-created PRIVATE test dataset
   itself stays available and its original inventory is restored.
 
-The Reader contract in this workflow targets deployed master SHA
+The historical Reader contract targeted deployed master SHA
 `45233f4854b657d146965cf71a38142289411b18`. These are **real Hugging Face
 dataset tests** and **mocked Reader gateway tests**. They do not establish
 that a live OAuth-authenticated Cloudflare browser session can retrieve each
