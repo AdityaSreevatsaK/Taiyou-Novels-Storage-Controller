@@ -74,6 +74,50 @@ def _identity_match(source: RemoteIdentity, destination: RemoteIdentity) -> bool
     return False
 
 
+def preview_remote_backup(api, backup_repo: str, token: str) -> dict[str, int]:
+    """Read-only production preflight for the GitHub Actions remote-first backup.
+
+    No dataset is created, no commit is made and no novel file is downloaded.
+    Fail closed for missing permissions, unverifiable objects and divergent
+    snapshot copies. This cannot prove region compatibility before a copy.
+    """
+    from .actions import validate_repo
+
+    validate_repo(backup_repo)
+    source_rev = private_dataset(api, DEFAULT_REPO, token)
+    sources = _tree(api, DEFAULT_REPO, source_rev, token)
+    if not sources or "data/library.json" not in sources:
+        raise ActionError("Private source inventory or catalogue is unavailable")
+    unverifiable = sum(
+        not (item.sha256 or item.xet_hash or item.blob_id)
+        for item in sources.values()
+    )
+    if unverifiable:
+        raise ActionError("Some source files lack verifiable cryptographic identities")
+
+    destination_rev = private_dataset(api, backup_repo, token)
+    existing = _tree(api, backup_repo, destination_rev, token)
+    prefix = f"snapshots/{source_rev}/files/"
+    pending = 0
+    verified = 0
+    for source_path, identity in sources.items():
+        target = existing.get(prefix + source_path)
+        if target is None:
+            pending += 1
+        elif _identity_match(identity, target):
+            verified += 1
+        else:
+            raise ActionError("Existing private snapshot contains divergent file content")
+    if private_dataset(api, DEFAULT_REPO, token) != source_rev:
+        raise ActionError("Source revision changed during preflight")
+    return {
+        "Source files": len(sources),
+        "Objects already verified": verified,
+        "Objects eligible for remote copy": pending,
+        "Full novel downloads": 0,
+    }
+
+
 def remote_backup(api, backup_repo: str, token: str, *, source_repo: str = DEFAULT_REPO,
                   batch_size: int = BATCH_SIZE) -> dict[str, int]:
     """Copy without local book downloads, verify all file identities remotely.
