@@ -7,9 +7,10 @@
 - Public MIT controller with Windows CMD menu and Python 3.11/3.12 CI on Windows/Ubuntu.
 - Smart incrementally reconciled ZIP/EPUB imports, local duplicate/conflict detection, original ZIP downloads and private catalogue exports.
 - Immutable 24-character novel IDs; both readable and legacy folder support; 14 November 2026 production-readable migration completed, with the one-shot workflow retired.
-- Validated covers, grouped guarded imports and resumable partial batch handling.
+- Manifest-validated standalone cover imports, grouped guarded commits and resumable partial batches; normal bulk upload can also attach uniquely matched local images from `covers/`.
+- **Partial:** automatic extraction of authentic embedded ZIP/EPUB cover artwork into a standalone `coverPath` during the same novel upload remains open [issue #54](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/54).
 - Revision-pinned inspection with quick/manifest/deep modes, inventory, chapter evidence, missing-cover audit, health and integrity reporting, optional inspection sidecar backfill.
-- Review-bound source metadata/genre recovery, additive catalogue-only changes and source identity checks.
+- Review-bound source metadata/genre recovery, additive catalogue-only changes and source identity checks. Current canonical publication statuses remain `Completed` and `Ongoing`; `Hiatus`/`Dropped` support remains open [issue #46](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/46).
 - Remote-first private backup with remote identity verification, optional full-verified mode, private reporting and source/destination readiness checks.
 - Completed consolidated Novel-Retriever export import through a manual GitHub runner.
 - Local owned/legacy cache cleanup with typed approval; local-only full reset requiring verified backup; retired public destructive Actions.
@@ -23,6 +24,8 @@ A capability in this section is **not** evidence that the latest production HF d
 | --- | --- | --- | --- |
 | P0 | Maintain privacy, catalogue integrity and reader compatibility whenever new features arrive | No public data leaks, unsafe reset, identity drift or unguarded writes. Run cross-platform offline regression tests | **Permanent invariant**, not a new feature |
 | P1 | Strengthen live-HF acceptance for new mutation paths and fault injection | Synthetic disposable private dataset exercises stale revisions, uncertain commit outcomes, network interruption, Xet objects and cross-batch resumes; production is untouched | **Proposed expansion**, not proof all tests exist |
+| P1 | Extract and attach validated embedded covers during normal bulk novel upload | Read the ZIP/OPF-declared cover, validate image and provenance, and update file plus `coverPath` in the same revision-guarded commit; no generic fallback artwork | **Open issue #54**; local `covers/` sidecar matching is implemented but is not equivalent |
+| P1 | Support canonical `Hiatus` and `Dropped` source publication statuses | Add verified aliases to source parsing, explicit patch validation, prompts and tests; preserve unknown historical values and never infer publication state | **Open issue #46**; current implementation accepts `Completed` / `Ongoing` only |
 | P1 | Audit every new writer for immutable-ID/source-versus-personal-field preservation | Test title/author changes, readable label mismatch, missing blobs, simultaneous reader writes and status/genre backfills; preserve unknown reader fields | **Ongoing maintenance need** |
 | P1 | Keep public GitHub output clean and accurate as new commands are introduced | Fixed numeric labels; clear preview/apply distinction; exit codes, private diagnostics and current workflow coverage tests | **Adopted convention**, future maintenance |
 | P2 | Validate backup restore procedures using separate private synthetic snapshots | Recovery instructions and safe rehydration tests that do not overwrite production; explicitly distinguish verification receipt from recoverability | **Proposed**, automatic full restore not implemented |
@@ -32,17 +35,27 @@ A capability in this section is **not** evidence that the latest production HF d
 | P3 | Review whether an optional automation/scheduler helps | Only if explicitly requested; bound token scope and avoid unattended production writes or publication of private reports | **Idea**, no scheduler implemented |
 | P3 | Consider a safer recovery operator UX | Guided preview, count-based risk summary and targeted safe replay rather than broad reset; never reduce confirmation requirements | **Idea**, not a confirmed product requirement |
 
+## Open tracked implementation issues at the audit baseline
+
+| Issue | Current state | Required acceptance |
+| --- | --- | --- |
+| [#54: embedded cover extraction](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/54) | **Open / partially implemented.** Bulk upload attaches supplied local `covers/` files; it does not extract authentic artwork from the ZIP/EPUB. | Validate OPF/ZIP provenance, image format/dimensions/size, same-commit `coverPath`, existing-cover preservation, missing/invalid artwork and idempotent retry. |
+| [#46: Hiatus / Dropped statuses](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/46) | **Open / not implemented.** Source parser and patch validator currently support only `Completed` and `Ongoing`. | Coordinate canonical names with Reader; test aliases, unknown legacy values, dry-run, revision-guarded apply and strict separation from personal reading completion. |
+
+These issue states were checked against GitHub at baseline commit `a40c01173df425aa94c445e7e221fd61f8e7fb34` on 21 November 2026. Refresh issue status before planning or closing either item. The individual issue descriptions are the detailed acceptance source, but they do not authorise a production metadata update.
+
 ## Current boundaries and deferred work
 
 1. This is not a scraper or a replacement for `RichardDaffern/Novel-Retriever`. New source providers, retries and chapter acquisition belong in that repo.
 2. This is not a web reader. UI, shelf, cover rendering, OAuth, caching, API fan-out and Cloudflare deployment belong in `Taiyous-Personal-Library`.
 3. The separate manga ecosystem uses different data contracts. Do not broaden this controller to accept manga page manifests by accident.
 4. `08_restore_novel.cmd` and `09_delete_novel.cmd` are deliberate explicit placeholders; the presence of a menu number is **not** a working feature.
-5. Full automatic restore, per-library global transactions, distributed lock service, general scheduler and schema migration framework are **not implemented**.
-6. The private dataset must not be used as a CI fixture. Real acceptance belongs in a *pre-created* private disposable dataset with restricted token and synthetic-only cleanup.
-7. No production migration or backup-free data-clearing Action may be reintroduced by copying an old YAML workflow.
-8. Do not expand source metadata research into authenticated scraping, chapter harvesting, redirect/captcha bypass or mass queries. Unsupported proof remains manual.
-9. No paid cloud APIs or new deployment service are necessary for the current architecture.
+5. Deleting the Hugging Face repository itself is forbidden and is not implemented. The remaining reset clears only the `data/` content tree through the local verified-backup-first process; it is not repository deletion.
+6. Full automatic restore, per-library global transactions, distributed lock service, general scheduler and schema migration framework are **not implemented**.
+7. The private dataset must not be used as a CI fixture. Real acceptance belongs in a *pre-created* private disposable dataset with restricted token and synthetic-only cleanup.
+8. No production migration or backup-free data-clearing Action may be reintroduced by copying an old YAML workflow.
+9. Do not expand source metadata research into authenticated scraping, chapter harvesting, redirect/captcha bypass or mass queries. Unsupported proof remains manual.
+10. No paid cloud APIs or new deployment service are necessary for the current architecture.
 
 ## Open engineering questions to answer before future work
 

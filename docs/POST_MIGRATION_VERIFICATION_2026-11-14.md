@@ -35,13 +35,17 @@ The one-shot audit workflow was removed from the proposed documentation changes 
 - Do not rename folders automatically when a book title changes.
 - Import, cover upload, list, duplicate/conflict reports and backup utilities must respect the catalogue-declared folder. Use the regular preview modes before any future write.
 - Keep the private backup dataset separate and private. Automatic full restore is not implemented.
-- Avoid rerunning the apply-mode migration as a verification step; use `python -m taiyou_storage.migrate_production` with `HF_READABLE_MIGRATION_APPLY=false` and a read-only GitHub Actions workflow.
+- The one-shot migration and migration-audit workflows are retired. Do **not** run `migrate_production` or the historical apply path as a routine check. Current read-only library checks are provided by `hf-inspect.yml` and the Windows inventory/integrity commands; these are general library checks, not a rerun of the migration transaction.
 
 ## Verification boundary
 
 The successful migration checked each moved file and catalogue identity. The one-novel live reader pilot was manually accepted, and the deployed reader's automated suite passed previously. **A new exhaustive authenticated browser test covering multiple migrated EPUBs, covers, ZIP downloads, offline caching and progress across different devices was not executed during this post-migration audit.** It remains a manual acceptance check, not a reason to repeat the migration.
 
-## Suggested smoke checks
+## Suggested reader smoke checks
+
+These are optional checks for the **separate Reader application**, not a reason to rerun the controller migration. The historical migration's numerical results above are not live catalogue counts.
+
+
 
 1. In the live signed-in reader, open three or more previously migrated books; navigate chapters and reopen to confirm position.
 2. Check actual covers and original ZIP downloads for books that have these assets.

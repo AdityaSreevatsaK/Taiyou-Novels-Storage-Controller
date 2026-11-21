@@ -35,7 +35,7 @@ Never run cleanup while an inspection, upload or migration is active.
 
 ## Backups, reset and safety
 
-The **full reset** removes **every file under `data/`** in your private dataset: novels, EPUBs, ZIPs, covers and any saved app data there. It is not intended for deleting a single novel or local download.
+The **data-tree reset** removes **every file under `data/`** in your private dataset: novels, EPUBs, ZIPs, covers and any saved app data there. It is not intended for deleting a single novel or local download. Deleting the Hugging Face repository itself is forbidden and is not implemented; the reset only creates a commit deleting selected `data/` files.
 
 ```powershell
 py -m taiyou_storage.reset           # Read-only preview
@@ -44,7 +44,7 @@ py -m taiyou_storage.reset --apply   # Interactive, verified-backup-first reset
 
 `11_clear_hf_data.cmd` provides the same backup-first workflow. The destructive path requires an interactive terminal, a complete SHA-256-verified local backup at a pinned dataset revision, and two explicit confirmations. It checks the dataset revision again before committing. **Keep the backup:** automatic restore is not implemented, and Git/LFS history may retain old files.
 
-**No GitHub Action can clear or delete the dataset.** The old backup-free clear workflow and CLI command were retired.
+**No GitHub Action can clear production data or delete the repository.** The old backup-free clear workflow/command were retired; the remaining content reset is local-only and backup-first.
 
 ## Recovery boundaries
 

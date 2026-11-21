@@ -24,7 +24,7 @@ The Storage Controller and Library App both accept *both formats* and can coexis
 - The standard local CLI `migrate_folders --apply` **refuses the production dataset**. It is solely for disposable testing.
 - No work on the controller alone can prove the production Cloudflare reader is deployed.
 
-## Historical mandatory gates used for the completed production move
+## Historical mandatory gates used for the completed production move (not a current runbook)
 
 1. Latest reader `master` has passed the **production** `Deploy Application` workflow, with the exact master SHA deployed.
 2. The latest `test/readable-folder-batch-acceptance-20261113` branch has a successful `Readable Folder Cross-Repo Acceptance` workflow at its **exact current head SHA**. This tests `apply_migration_batch()` in multiple commits against the **existing, pre-created private** Hugging Face test dataset `AdityaSreevatsaK/Taiyou-Readable-Folder-Test`. The workflow must restore that dataset to its original inventory without deleting the dataset.
@@ -33,9 +33,9 @@ The Storage Controller and Library App both accept *both formats* and can coexis
 5. No remote change occurred during backup. The source SHA is rechecked before starting any migration.
 6. Explicit workflow input `apply_changes=true` and exact phrase `MIGRATE READABLE NOVEL FOLDERS` are required.
 
-If any gate fails, **do not bypass it**. Fix credentials/configuration and re-run the *read-only preview*.
+These were the gates for the November 2026 migration. The one-shot workflow and temporary branch are now retired; do not attempt to satisfy this checklist by recreating or dispatching the old workflow.
 
-## How the operation works
+## How the historical operation worked
 
 The production workflow's Python entrypoint is `taiyou_storage.migrate_production`.
 
@@ -50,27 +50,19 @@ The production workflow's Python entrypoint is `taiyou_storage.migrate_productio
 
 The private backup remains available after success. File moves are recoverable through the prior Hugging Face revision and verified private snapshot, but this project does **not** yet offer an automatic full restore.
 
-## Failure and resume
+## Historical failure and resume behaviour
 
-The full library move is **not one transaction**; batches are separate commits. A failure can leave some novels readable and some legacy. This is expected and supported.
+The migration was **not one transaction**; batches were separate commits. The implementation could leave some novels readable and some legacy after an interrupted run, then re-plan against the latest revision. The production migration subsequently completed and was independently audited. Its one-shot workflow is retired, so do not try to resume it through the old Actions procedure.
 
-On failure:
-
-1. Leave the dataset untouched. Never run the full reset.
-2. Re-run read-only preview.
-3. Already migrated entries must show `ALREADY_READABLE`, with unchanged IDs and contents.
-4. Fix the blocker. A fresh complete private backup and latest-revision check must precede any new apply.
-5. Resume only the remaining `MIGRATE` entries.
-
-GitHub workflow public logs must never include real novel titles, original filenames, personal notes or catalogue content.
+For current novel uploads, use the active preview/replan/resume process in [Smart upload](SMART_UPLOAD.md). GitHub workflow public logs must never include real novel titles, original filenames, personal notes or catalogue content.
 
 ## Authentication blockers
 
-The real disposable test uses the **manually created PRIVATE** dataset `AdityaSreevatsaK/Taiyou-Readable-Folder-Test`. `HF_DISPOSABLE_TEST_TOKEN` only needs **read/write permissions on that exact test dataset**. No repository creation or deletion permission is required. The runner refuses public, nonempty or other target datasets; it removes only its own synthetic files using a revision-guarded cleanup, retaining the test dataset.
+The historical disposable test used the **manually created PRIVATE** dataset `AdityaSreevatsaK/Taiyou-Readable-Folder-Test`. The retired workflow used `HF_DISPOSABLE_TEST_TOKEN` scoped to that test dataset only; no repository creation or deletion permission was required. The historical runner refused public, nonempty or other target datasets and removed only its own synthetic files using revision-guarded cleanup. The old workflow is not available on current `master`; do not create or grant a token merely to follow this historical document.
 
 For the production backup, `HF_STORAGE_CONTROLLER_TOKEN` requires **read access** to `Taiyous-Novels` and **write access** to the separate **PRIVATE** `AdityaSreevatsaK/Taiyous-Novels-Backup` dataset. Both permissions were verified for the completed 14 November production migration. The backup dataset must remain private; do not broaden token scopes unnecessarily.
 
-The live disposable acceptance passed before production migration. The production workflow continues to enforce this gate for any future write.
+The live disposable acceptance passed before production migration. The production migration workflow was retired after the verified 14 November completion. Any future migration would require a new scoped design, fresh approval, new tests and independently verified backup; this document does not authorise it.
 
 ## Useful files
 
@@ -81,15 +73,15 @@ The live disposable acceptance passed before production migration. The productio
 - The former manually approved backup-first production workflow was retired after successful migration.
 - The reader's `src/lib/novel-paths.ts`: browser and Cloudflare gateway path contract.
 
-Do not treat adding this documentation or merging controller code as proof that existing production folders have actually been renamed. Confirm the production Hugging Face dataset inventory after a successful live migration.
+For the November 2026 migration, the production run and independent read-only audit above are the evidence that folders were renamed. For any future change, a code merge or documentation update alone is never proof of a live HF data change.
 
 
 ## Historical coordination and production boundary
 
 - Reader `master` `45233f4854b657d146965cf71a38142289411b18` passed the existing production `Deploy Application` run `43404544333` with dual-format support and readable-folder creation for new browser uploads.
-- The earlier **read-only** production preview showed **89 legacy novel folders**, **zero collisions**, and no already-readable book folders. This is historical until the next read-only run refreshes it.
+- The pre-migration **read-only** preview showed **89 legacy novel folders**, **zero collisions**, and no already-readable book folders. This is historical pre-migration evidence, not the current inventory.
 - Live private integration on the manually created test dataset has verified `apply_one()` (run `43431262417`) and the production-style `apply_migration_batch()` over two consecutive commits (see the latest successful run on the consolidation branch).
-- The reader path/gateway tests are mocked. Successful deployment alone is **not proof** of an authenticated live EPUB/cover/archive browser session. An authenticated owner smoke test is required before production moves.
+- The reader path/gateway tests were mocked. The single-book production pilot was manually accepted, but an exhaustive authenticated multi-book browser smoke test for EPUBs, covers, ZIP downloads, offline caching and cross-device progress was not recorded. This remains a separate Reader verification gap; do not rerun the completed storage migration to address it.
 - **Never invoke production migration apply** as part of testing, consolidation or backup-readiness checks. It requires a separate, explicit approval.
 
 

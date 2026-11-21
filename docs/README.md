@@ -12,9 +12,10 @@ Start with the [project README](../README.md) for setup and the most-used comman
 | [Failures and lessons learnt](FAILURES_AND_LESSONS.md) | Past incident patterns, fixes, regressions and recovery discipline |
 | [Operations and deployment](OPERATIONS_AND_DEPLOYMENT.md) | Local Windows setup, GitHub Actions, credentials, verification and deployment boundaries |
 | [Roadmap](ROADMAP.md) | Delivered features, prioritised proposals, known limitations and open questions |
+| [Dated project-state snapshot](PROJECT_STATE.md) | Verified baseline SHA, active workflows, capability states and open issues; always refresh before use |
 | [Output conventions](OUTPUT_CONVENTIONS.md) | Concise start/counts/closure and privacy-safe public Actions summaries |
 
-**Current agent instructions:** [AGENTS.md](../AGENTS.md). The [pre-restructure
+**Current agent instructions:** [AGENTS.md](../AGENTS.md). They require a fresh Git/source/issue/PR review before substantial work. The [pre-restructure
 historical agent handbook](archive/AGENTS_PRE_2026-11-21.md) is retained for
 background only and contains out-of-date paths/workflows.
 

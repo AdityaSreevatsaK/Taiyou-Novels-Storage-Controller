@@ -47,7 +47,7 @@ requiring a retained upstream GitHub artefact, use
 [option 18: Source metadata audit and repair](METADATA_REPAIR.md).
 
 This historical repair is independent of the cover uploader and normal novel uploader.
-A duplicate Abe the Wizard is intentionally **not** deleted or merged.
+A duplicate-title record is intentionally **not** deleted or merged; ambiguous records require owner review.
 
 ## Local command
 

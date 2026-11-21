@@ -10,7 +10,7 @@ All controller operations should be **brief, clear and complete** by default.
 4. **END**: `PREVIEW`, `COMPLETED`, `NO CHANGES`, `CANCELLED`,
    `BLOCKED` or `FAILED`.
 
-Example, with fictional counts:
+Example from the owner's reported cleanup run; these are historical figures, not a live cache measurement:
 
 ```text
 === Local cache cleanup preview ===

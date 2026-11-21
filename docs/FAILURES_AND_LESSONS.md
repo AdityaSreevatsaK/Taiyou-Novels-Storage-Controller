@@ -15,7 +15,7 @@
 | Cover import encountered path/manifest/quote or ambiguous title matching problems | Windows whitespace quoting, nested archive assumptions or title-only identity were unreliable | Preserve quoting/working directory; accept only verified package formats; bind cover to a unique existing book ID/source identity; refuse guesses | Do not infer that an uploaded image must appear in the reader |
 | Missing genres/synopsis/status after historical Retriever assembly | Intermediate packages lost EPUB `dc:subject` or other provenance | Research source fields conservatively, back up catalogue, make additive-only identity-checked repair; avoid overwriting known values | Historical artifacts may expire; missing source evidence cannot be fabricated |
 | Opaque numeric HF directories were hard to browse | ID-only storage paths lacked human-friendly labels | Human-readable suffixes with immutable ID, backwards-compatible `paths.py`, catalogue paths as authority and no automatic rename on title change | 14 Nov migration 89/89 and separate read-only audit recorded |
-| Potentially destructive full-dataset clear exposed through Actions | Backup-free cloud deletion risk was too high | Retire public-triggered broad delete/clear workflow; retain only local reset requiring complete verified backup and multiple typed confirmations | Never test destructive apply on production |
+| Potentially destructive repository deletion / full data clear exposed through Actions | An accidental repository deletion and backup-free cloud clearing could destroy the entire library | Remove repository deletion entirely and retire public reset Actions; retain only local `data/` content clearing with a complete verified backup, fresh revision checks and multiple typed confirmations | Repository deletion is forbidden; local content reset is not a repository delete |
 | Existing reader/controller write paths could race | One shared catalogue, multiple distinct write clients, no shared distributed lock | Revision-pinned reads plus `parent_commit`; reject unexpected writes and replan. Do not force the old plan | A GH workflow concurrency group is not a global mutex |
 | Remote backup used heavy downloads or lacked proof of copy | Laptop/runner limits and weak copy-equality assumptions | Default to remote-first copy with **cryptographic identity and size**, private receipt and explicit full-verified fallback. No same-size-only certification | Readiness does not prove a server-side copy will work across storage regions |
 | A cover/EPUB audit downloaded excessive data to Windows HF shared cache | Deep binary inspection and shared cache residency created disk pressure | Default to quick/manifest, isolate inspection cache under `reports/.inspection-download-cache`, require preview/typed local-only cleanup | Owned files and legacy shared-cache entries are different counts; recovered disk bytes may differ from estimates |
@@ -36,6 +36,15 @@ This was a deliberately protected data migration, not a routine upload. The 13 N
 The production-readiness and adversarial-failure reviews highlighted inconsistent protection across mutation paths, incomplete "unchanged" predicates, cover transaction uncertainty and gaps between mock tests and real HF behaviour. These were investigation findings and follow-up priorities, not evidence that every scenario was reproduced live. Review the current code and relevant regression tests rather than assuming all prior diagnoses still apply.
 
 For user-facing operating instructions, read [Safety and recovery](SAFETY_AND_RECOVERY.md). For code-level failure sequences, the older [historical agent handbook](archive/AGENTS_PRE_2026-11-21.md) has more detailed cases but may contain obsolete workflow names and pre-migration paths.
+
+## Current tracked implementation gaps (checked 21 November 2026)
+
+These are open issues, not completed fixes:
+
+- [#54: embedded cover extraction](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/54): normal upload can attach separately supplied local cover files, but does not yet extract authentic artwork from the novel ZIP/OPF-declared EPUB and publish `coverPath` in the same transaction.
+- [#46: Hiatus / Dropped publication statuses](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/46): source parser and metadata patch validator currently support `Completed` and `Ongoing` only. Do not infer a status or alter a real book from issue text alone.
+
+A separate workflow hardening gap was identified during this audit: three manual private-HF workflows lacked a repository/master job guard and disabled checkout credential persistence; they already shared the controller concurrency group. This change adds the missing branch guard, disables persisted checkout credentials and adds a workflow regression test. Verify the actual merged YAML and passing CI before relying on them.
 
 ## Failure response protocol for future agents
 
