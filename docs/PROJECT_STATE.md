@@ -11,6 +11,7 @@
 | Repository | `AdityaSreevatsaK/Taiyou-Novels-Storage-Controller` |
 | Visibility / default branch | Public / `master` |
 | Baseline commit | [`a40c011`](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/commit/a40c01173df425aa94c445e7e221fd61f8e7fb34) |
+| Code version at baseline | `0.1.0` (`VERSION`; first formal release tag `v0.1.0`) |
 | Remote branches | `master` only |
 | Open pull requests | None at audit start |
 | Open tracked issues | [#46 publication-status taxonomy](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/46), [#54 embedded cover extraction](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/54) |
