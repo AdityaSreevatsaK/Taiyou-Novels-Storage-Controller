@@ -1,4 +1,7 @@
 @echo off
-echo Delete operation is planned, not implemented.
+setlocal
+call "%~dp0console_output.bat" start "Delete novel"
+echo   Status : Not implemented. No remote changes made.
+call "%~dp0console_output.bat" end "Delete novel" "2"
 pause
-exit /b 1
+exit /b 2
