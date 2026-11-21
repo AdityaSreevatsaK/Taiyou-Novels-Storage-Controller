@@ -64,6 +64,8 @@ a vulnerability merely to obtain a green badge.
 
 ## Retained workflows
 
+The current active workflow inventory is enforced by `tests/test_github_workflow_cleanup.py`. Every private HF workflow that can inspect or mutate data must check both the exact repository (`AdityaSreevatsaK/Taiyou-Novels-Storage-Controller`) and `refs/heads/master` at the job level, and use the shared `hf-storage-controller` concurrency group. A `workflow_dispatch` event can otherwise run code from the selected branch. The concurrency group serialises these controller Actions only; it is not a lock against local commands, Reader writes or other repositories.
+
 | Workflow | Purpose |
 | --- | --- |
 | **CI** | Automatic offline tests on Windows/Linux plus weekly and PR dependency vulnerability audit; never reads private HF |
@@ -107,7 +109,7 @@ Use [**HF - Import Novel-Retriever bundle (cloud only)**](https://github.com/Adi
 
 Never publish the generated private preview reports or the novel artifact from this controller as GitHub Actions artifacts. Output contains only counts. This workflow uses the existing `HF_STORAGE_CONTROLLER_TOKEN` for **write** access to the private HF dataset and `NOVEL_LIBRARY_ACTIONS_TOKEN` when cross-repository GitHub artifact access needs explicit permission.
 
-This bridge supports **completed consolidated exports only**, not arbitrary partially downloaded chapter batches or unverified individual artefacts. An invalid, expired or conflicted export fails without touching Hugging Face. If a previous HF batch was committed but a later batch failed, rerun the same export: the controller skips already committed matching novels. Files remain available in the original Retriever export run until GitHub's artifact retention period ends.
+This bridge supports **completed consolidated exports only**, not arbitrary partially downloaded chapter batches or unverified individual artefacts. The bulk uploader can attach uniquely matched local or exported sidecar covers, but does not yet extract embedded ZIP/OPF-declared EPUB cover artwork into `coverPath` during the same import; see [open issue #54](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/54). An invalid, expired or conflicted export fails without touching Hugging Face. If a previous HF batch was committed but a later batch failed, rerun the same export: the controller skips already committed matching novels. Files remain available in the original Retriever export run until GitHub's artifact retention period ends.
 
 No local download is required for exported Retriever novels. Files found **only on your Windows disk** must still be uploaded through the normal `01_bulk_upload.cmd` path.
 
@@ -145,6 +147,8 @@ The verification receipt lives inside the PRIVATE backup dataset at
 
 ## Limits
 
+- The current source-metadata parser and manual repair validator accept `Completed` and `Ongoing` only. Canonical `Hiatus` and `Dropped` support remains open in [issue #46](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/46); do not infer publication status from reading progress or chapter counts.
+
 GitHub Actions cannot access ZIP files that exist only on your Windows
 computer. New local uploads must first reach GitHub as a private permitted
 artifact or be uploaded directly. Byte-level EPUB validation still requires
@@ -167,10 +171,7 @@ production migration from a retired workflow.
 
 ## Destructive operations and local-only work
 
-**No GitHub Action can clear or delete the novel dataset.** To intentionally
-reset the entire private library, only the local `11_clear_hf_data.cmd` runs
-the complete backup-first, checksum-verified, revision-guarded process with
-multiple explicit confirmations.
+**No GitHub Action can delete the Hugging Face repository or clear its production data.** Repository deletion is forbidden and is not implemented. To intentionally clear the private dataset's `data/` content tree, only the local `11_clear_hf_data.cmd` runs the complete backup-first, checksum-verified, revision-guarded process with multiple explicit confirmations. This is a content reset, not repository deletion.
 
 Local-only operations include uploading ZIPs stored on your Windows computer,
 comparing local ZIP bytes to the remote dataset, and deleting local cached
