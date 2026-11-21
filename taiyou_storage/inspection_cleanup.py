@@ -105,12 +105,18 @@ def run(argv: list[str] | None = None) -> int:
             shutil.rmtree(isolated)
         if strategy is not None:
             strategy.execute()
+        # Re-scan, rather than claiming that no shared references remain.
+        legacy_remaining = 0
+        if args.legacy_shared_cache:
+            from huggingface_hub import scan_cache_dir
+            legacy_remaining = len(_legacy_targets(
+                scan_cache_dir(args.shared_cache_dir), args.repo))
         print_summary("Local cache cleanup completed", {
             "Owned files removed": isolated_count,
             "Owned bytes removed": f"{isolated_size:,}",
             "Legacy entries removed": legacy_count,
             "Legacy potential space": legacy_estimate,
-            "Matching entries remaining": 0,
+            "Matching entries remaining": legacy_remaining,
         }, note=("The legacy figure is an estimate; shared HF blobs may be retained. "
                   "Private Hugging Face dataset unchanged."),
             status="COMPLETED")
