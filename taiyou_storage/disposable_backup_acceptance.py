@@ -19,6 +19,13 @@ from zipfile import ZipFile, ZIP_DEFLATED, ZIP_STORED
 OWNER = "AdityaSreevatsaK"
 PREFIX = "Taiyou-Backup-Acceptance"
 BOOK_ID = "b" * 24
+STAGE = 0
+
+
+def stage(number: int) -> None:
+    """Record a non-sensitive numeric phase for safe GitHub diagnostics."""
+    global STAGE
+    STAGE = number
 
 
 def repositories(run_id: str, attempt: str) -> tuple[str, str]:
@@ -94,10 +101,13 @@ def acceptance(api, source: str, destination: str, token: str) -> dict[str, int]
     if (source == destination or "Taiyous-Novels" in source
             or "Taiyous-Novels" in destination):
         raise ValueError("Production or identical datasets forbidden")
+    stage(1)
     initial = create_private(api, source, token)
+    stage(2)
     create_private(api, destination, token)
     fixture = synthetic_files()
     validate_catalogue(json.loads(fixture["data/library.json"]))
+    stage(3)
     api.create_commit(
         repo_id=source, repo_type="dataset", token=token, parent_commit=initial,
         operations=[CommitOperationAdd(path_in_repo=name,
@@ -113,10 +123,12 @@ def acceptance(api, source: str, destination: str, token: str) -> dict[str, int]
     with ExitStack() as guards:
         guards.enter_context(patch.object(actions, "DEFAULT_REPO", source))
         guards.enter_context(patch.object(backup, "DEFAULT_REPO", source))
+        stage(4)
         before = backup.preview_remote_backup(api, destination, token)
         if before["Objects eligible for remote copy"] < len(fixture):
             raise ValueError("Synthetic preflight inventory unexpectedly incomplete")
         # Stage one legitimate copy, simulating an interrupted first batch.
+        stage(5)
         dst_rev = private_revision(api, destination, token)
         api.create_commit(
             repo_id=destination, repo_type="dataset", token=token,
@@ -128,21 +140,25 @@ def acceptance(api, source: str, destination: str, token: str) -> dict[str, int]
                 src_repo_type="dataset")],
             commit_message="Synthetic partial-copy recovery acceptance",
         )
+        stage(6)
         first = backup.remote_backup(api, destination, token,
                                      source_repo=source, batch_size=2)
         if (first["Snapshot verified"] != 1 or
                 first["Previously verified objects reused"] != 1):
             raise ValueError("Partial resume or verification failed")
         dst_before_rerun = private_revision(api, destination, token)
+        stage(7)
         again = backup.remote_backup(api, destination, token,
                                       source_repo=source, batch_size=2)
         dst_after_rerun = private_revision(api, destination, token)
         if again["Objects copied"] != 0 or dst_before_rerun != dst_after_rerun:
             raise ValueError("Snapshot retry was not idempotent")
+        stage(8)
         post = backup.preview_remote_backup(api, destination, token)
         if post["Objects eligible for remote copy"] != 0:
             raise ValueError("Snapshot remains incomplete")
 
+    stage(9)
     receipt = json.loads(Path(hf_hub_download(
         repo_id=destination, repo_type="dataset",
         filename=f"snapshots/{src_rev}/verification.json",
@@ -152,6 +168,7 @@ def acceptance(api, source: str, destination: str, token: str) -> dict[str, int]
             receipt.get("files") != first["Source files"]):
         raise ValueError("Completion receipt conflicts with synthetic source")
 
+    stage(10)
     for name, expected in fixture.items():
         src = Path(hf_hub_download(repo_id=source, repo_type="dataset",
                                   filename=name, revision=src_rev,
@@ -163,6 +180,7 @@ def acceptance(api, source: str, destination: str, token: str) -> dict[str, int]
             raise ValueError("Independent snapshot SHA-256 mismatch")
     if private_revision(api, source, token) != src_rev:
         raise ValueError("Source revision changed")
+    stage(11)
     return first
 
 
@@ -177,6 +195,7 @@ def main() -> int:
         print("ERROR: HF_DISPOSABLE_TEST_TOKEN is unavailable to the workflow.",
               file=sys.stderr)
         return 2
+    stage(0)
     try:
         import huggingface_hub
         if huggingface_hub.__version__ != "1.33.0":
@@ -184,6 +203,7 @@ def main() -> int:
         source, destination = repositories(
             os.getenv("GITHUB_RUN_ID", ""), os.getenv("GITHUB_RUN_ATTEMPT", ""))
         result = acceptance(huggingface_hub.HfApi(), source, destination, token)
+        print(f"Acceptance stage: {STAGE}")
         for key, value in result.items():
             # Only numeric metrics, never novel names, dataset IDs or URLs.
             print(f"{key}: {value}")
@@ -191,6 +211,9 @@ def main() -> int:
         return 0
     except Exception as error:
         # Public GitHub job logs must never contain private HF error bodies.
+        print(f"Acceptance stage: {STAGE}")
+        code = {"ValueError": 1, "HTTPError": 2, "HfHubHTTPError": 3, "RepositoryNotFoundError": 4, "TypeError": 5, "AttributeError": 6, "ConnectionError": 7}.get(type(error).__name__, 99)
+        print(f"Acceptance error code: {code}")
         print(f"ERROR: Synthetic HF acceptance failed ({type(error).__name__}).",
               file=sys.stderr)
         return 1
