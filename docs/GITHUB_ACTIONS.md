@@ -113,6 +113,28 @@ This bridge supports **completed consolidated exports only**, not arbitrary part
 
 No local download is required for exported Retriever novels. Files found **only on your Windows disk** must still be uploaded through the normal `01_bulk_upload.cmd` path.
 
+
+## Disposable real-HF backup acceptance
+
+[**HF - Disposable remote backup acceptance**](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/workflows/hf-disposable-backup-acceptance.yml)
+is a gated test-only workflow. It uses only the repository Actions secret
+`HF_DISPOSABLE_TEST_TOKEN`, **never** the production storage token. On its
+initial merge to `master`, the workflow triggers once. It also supports manual
+runs on trusted `master`.
+
+The workflow creates two new **PRIVATE** run-specific synthetic datasets,
+uploads only fictional EPUB/ZIP/cover/catalogue fixtures, stages a partial
+copy, exercises actual `remote_backup()` recovery, verifies a zero-write
+rerun, and independently SHA-256-checks every fixture plus the private
+receipt. It does **not** access, alter or delete the production dataset, and
+does not delete the disposable datasets afterwards.
+
+The test token must have permission to create private datasets in the owner's
+namespace. If the secret exists only in a GitHub Environment rather than as a
+**repository Actions secret**, this workflow cannot access it and fails
+without contacting HF. See [the isolated acceptance runbook](DISPOSABLE_BACKUP_ACCEPTANCE.md).
+A green ordinary CI run does not substitute for a successful live synthetic run.
+
 ## Remote-first backups (no novel downloads to your laptop)
 
 [**HF - Back up entire dataset PRIVATELY**](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/workflows/hf-private-backup.yml)
