@@ -62,6 +62,15 @@ class DisposableBackupAcceptanceTests(unittest.TestCase):
         metrics = safe_metrics("Acceptance stage: 6\nAcceptance error code: 3\nPrivate file: hidden")
         self.assertEqual(metrics, [("Acceptance stage", "6"), ("Acceptance error code", "3")])
 
+    def test_public_origin_and_guard_metrics_contain_only_numbers(self):
+        metrics = safe_metrics(
+            "Acceptance error origin: 1\nAcceptance harness guard: 0\n"
+            "HF token: SECRET SHOULD NOT BE EXPOSED"
+        )
+        self.assertEqual(metrics, [
+            ("Acceptance error origin", "1"), ("Acceptance harness guard", "0")
+        ])
+
     def test_main_requires_trusted_master_context(self):
         with patch.dict(os.environ, {
             "GITHUB_REPOSITORY": "another/repo",
