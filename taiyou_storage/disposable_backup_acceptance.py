@@ -28,15 +28,17 @@ def stage(number: int) -> None:
     STAGE = number
 
 
-def repositories(run_id: str, attempt: str) -> tuple[str, str]:
+def repositories(run_id: str, attempt: str, *, owner: str = OWNER) -> tuple[str, str]:
     """Names never come from workflow inputs, and cannot select production."""
     if not re.fullmatch(r"[1-9][0-9]{0,17}", run_id):
         raise ValueError("Invalid GitHub run ID")
     if not re.fullmatch(r"[1-9][0-9]{0,5}", attempt):
         raise ValueError("Invalid GitHub attempt")
+    if not isinstance(owner, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,95}", owner):
+        raise ValueError("Invalid authenticated HF username")
     suffix = f"{run_id}-A{attempt}"
-    return (f"{OWNER}/{PREFIX}-Source-{suffix}",
-            f"{OWNER}/{PREFIX}-Destination-{suffix}")
+    return (f"{owner}/{PREFIX}-Source-{suffix}",
+            f"{owner}/{PREFIX}-Destination-{suffix}")
 
 
 def synthetic_files() -> dict[str, bytes]:
@@ -200,9 +202,17 @@ def main() -> int:
         import huggingface_hub
         if huggingface_hub.__version__ != "1.33.0":
             raise ValueError("Expected pinned Hugging Face client not installed")
+        api = huggingface_hub.HfApi()
+        stage(1)
+        identity = api.whoami(token=token)
+        owner = identity.get("name") if isinstance(identity, dict) else None
+        if not isinstance(owner, str):
+            raise ValueError("HF token identity unavailable")
         source, destination = repositories(
-            os.getenv("GITHUB_RUN_ID", ""), os.getenv("GITHUB_RUN_ATTEMPT", ""))
-        result = acceptance(huggingface_hub.HfApi(), source, destination, token)
+            os.getenv("GITHUB_RUN_ID", ""), os.getenv("GITHUB_RUN_ATTEMPT", ""),
+            owner=owner)
+        print(f"Acceptance token owner match: {int(owner == OWNER)}")
+        result = acceptance(api, source, destination, token)
         print(f"Acceptance stage: {STAGE}")
         for key, value in result.items():
             # Only numeric metrics, never novel names, dataset IDs or URLs.
@@ -214,6 +224,10 @@ def main() -> int:
         print(f"Acceptance stage: {STAGE}")
         code = {"ValueError": 1, "HTTPError": 2, "HfHubHTTPError": 3, "RepositoryNotFoundError": 4, "TypeError": 5, "AttributeError": 6, "ConnectionError": 7}.get(type(error).__name__, 99)
         print(f"Acceptance error code: {code}")
+        response = getattr(error, "response", None)
+        status = getattr(response, "status_code", None)
+        if isinstance(status, int) and 100 <= status <= 599:
+            print(f"Acceptance HTTP status: {status}")
         print(f"ERROR: Synthetic HF acceptance failed ({type(error).__name__}).",
               file=sys.stderr)
         return 1

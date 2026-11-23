@@ -12,12 +12,14 @@ datasets. Its Python module is `taiyou_storage/disposable_backup_acceptance.py`.
 - Requires `HF_DISPOSABLE_TEST_TOKEN` as a **repository-level GitHub Actions
   secret** (not `HF_STORAGE_CONTROLLER_TOKEN`). If unavailable, it fails before
   contacting Hugging Face.
-- The test credential must be permitted to create two private datasets and
-  upload/copy synthetic test files. It must not be used for production.
+- The test credential must be permitted to create two private datasets in its
+  authenticated HF account and upload/copy synthetic test files. It must not be
+  used for production.
 - Creates private repositories with run-specific identifiers:
-  `AdityaSreevatsaK/Taiyou-Backup-Acceptance-Source-<run>-A<attempt>`
-  and `AdityaSreevatsaK/Taiyou-Backup-Acceptance-Destination-<run>-A<attempt>`.
-  These names are generated from the trusted GitHub run context, never from inputs.
+  `<HF-token-owner>/Taiyou-Backup-Acceptance-Source-<run>-A<attempt>`
+  and `<HF-token-owner>/Taiyou-Backup-Acceptance-Destination-<run>-A<attempt>`.
+  The namespace is obtained by an authenticated HF `whoami` call; generated
+  dataset names come from the trusted GitHub run context, never from inputs.
   Existing repositories are never overwritten.
 - **Does not delete its private test datasets**. They remain available for
   independent inspection and may require later manual disposal.
@@ -68,5 +70,9 @@ HF API errors or dataset paths:
 - `Acceptance error code`: 1 ValueError, 2 HTTPError, 3 HfHubHTTPError,
   4 RepositoryNotFoundError, 5 TypeError, 6 AttributeError,
   7 ConnectionError, 99 other.
+- `Acceptance token owner match`: 1 if authenticated HF username equals the
+  expected GitHub namespace, otherwise 0; the username is never printed.
+- `Acceptance HTTP status`: HTTP status code (only if available), no response
+  body, headers or URL.
 
 These numbers diagnose the phase/category, not the private API response.
