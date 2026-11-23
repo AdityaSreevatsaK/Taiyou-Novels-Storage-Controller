@@ -4,6 +4,26 @@
 
 > **This is a dated snapshot, not a live status API.** It was inspected against remote `master` at `a40c01173df425aa94c445e7e221fd61f8e7fb34` on **21 November 2026**. Before every substantial task, agents MUST refresh the live repository, Git and issue state as described in [AGENTS.md](../AGENTS.md) and [AI_AGENT_PLAYBOOK.md](AI_AGENT_PLAYBOOK.md). Never assume this file is still current.
 
+
+## Dated follow-up: 23 November 2026 (proposed test-only acceptance)
+
+After refreshing remote `master` at `d021faae16668fb8555df8c79293c2af2b75b1ba`
+(no open PRs at the start of this follow-up, latest master CI and release
+successful), a feature branch adds a **tenth**, guarded
+`hf-disposable-backup-acceptance.yml` workflow and synthetic integration
+harness. It consumes `HF_DISPOSABLE_TEST_TOKEN`, creates new isolated
+private synthetic datasets, tests partial-copy recovery, identity validation,
+idempotent rerun and independent SHA-256 read-back. The tests never use the
+production source and do not delete the disposable datasets.
+
+This is **proposed code and test infrastructure**, NOT live-HF acceptance
+evidence. After merging, inspect the exact Actions run's conclusion, job
+steps and allowlisted numeric summary, then update the evidence record.
+If the token is unavailable, scoped to an environment, or lacks private
+dataset creation permission, report the test as **blocked**, not passed.
+All previous historical baseline observations below remain dated evidence,
+not statements of the latest live GitHub state.
+
 ## Repository baseline
 
 | Item | Verified state at baseline |
