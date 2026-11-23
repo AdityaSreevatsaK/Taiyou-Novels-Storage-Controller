@@ -21,6 +21,14 @@ class DisposableBackupAcceptanceTests(unittest.TestCase):
         self.assertTrue(dest.startswith("AdityaSreevatsaK/Taiyou-Backup-Acceptance-Destination-"))
         self.assertNotIn("Taiyous-Novels", src + dest)
 
+    def test_authenticated_owner_can_differ_from_github_owner(self):
+        src, dest = repositories("45124530615", "2", owner="SeparateHFAccount")
+        self.assertTrue(src.startswith("SeparateHFAccount/Taiyou-Backup-Acceptance-Source-"))
+        self.assertTrue(dest.startswith("SeparateHFAccount/Taiyou-Backup-Acceptance-Destination-"))
+        for bad_owner in ("", "bad/owner", "space owner", "../x", "!"):
+            with self.subTest(owner=bad_owner), self.assertRaises(ValueError):
+                repositories("45124530615", "2", owner=bad_owner)
+
     def test_unsafe_or_ambiguous_run_ids_are_rejected(self):
         for run, attempt in [("", "1"), ("0", "1"), ("../../prod", "1"),
                              ("12", "0"), ("12", "01"), ("12", "-1"),
