@@ -1,5 +1,5 @@
 name: "HF - Disposable remote backup acceptance"
-# Re-run on master merge with authenticated HF owner and numeric HTTP status diagnostics.
+# On master merge, diagnose ValueError origin through allowlisted numeric metrics only.
 
 on:
   push:

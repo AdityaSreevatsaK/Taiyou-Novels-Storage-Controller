@@ -224,6 +224,28 @@ def main() -> int:
         print(f"Acceptance stage: {STAGE}")
         code = {"ValueError": 1, "HTTPError": 2, "HfHubHTTPError": 3, "RepositoryNotFoundError": 4, "TypeError": 5, "AttributeError": 6, "ConnectionError": 7}.get(type(error).__name__, 99)
         print(f"Acceptance error code: {code}")
+        # Never print error strings, file paths or remote API responses.
+        # Fixed numeric traceback origin only, for third-party ValueError triage.
+        frames = []
+        tb = error.__traceback__
+        while tb is not None:
+            frames.append(tb.tb_frame.f_globals.get("__name__", ""))
+            tb = tb.tb_next
+        origin = frames[-1] if frames else ""
+        origin_code = (
+            1 if origin.startswith("huggingface_hub") else
+            2 if origin == "taiyou_storage.remote_backup" else
+            3 if origin == "taiyou_storage.disposable_backup_acceptance" else
+            4 if origin.startswith("taiyou_storage.") else
+            9
+        )
+        print(f"Acceptance error origin: {origin_code}")
+        known_guards = {
+            "Partial resume or verification failed": 1,
+            "Synthetic preflight inventory unexpectedly incomplete": 2,
+            "Snapshot retry was not idempotent": 3,
+        }
+        print(f"Acceptance harness guard: {known_guards.get(str(error), 0)}")
         response = getattr(error, "response", None)
         status = getattr(response, "status_code", None)
         if isinstance(status, int) and 100 <= status <= 599:
