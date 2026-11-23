@@ -51,3 +51,22 @@ are unavailable. Production remains unchanged in all cases.
 The test temporarily replaces the Controller's hardcoded production source
 name **only inside its acceptance subprocess** and passes the synthetic source
 explicitly into `remote_backup()`. Normal CLI/Actions remain production-gated.
+
+## Safe failure diagnostics
+
+The first real synthetic run found the test secret available to the GitHub job
+but could not complete. Its public output was intentionally privacy-filtered.
+
+Follow-up runs show two numeric metrics on failure, without printing private
+HF API errors or dataset paths:
+
+- `Acceptance stage`: 0 environment/version, 1 create private source,
+  2 create private destination, 3 upload fixture, 4 remote preflight,
+  5 simulate partial copy, 6 resume via real backup code, 7 idempotent
+  rerun, 8 post-check, 9 inspect receipt, 10 independent SHA-256,
+  11 complete.
+- `Acceptance error code`: 1 ValueError, 2 HTTPError, 3 HfHubHTTPError,
+  4 RepositoryNotFoundError, 5 TypeError, 6 AttributeError,
+  7 ConnectionError, 99 other.
+
+These numbers diagnose the phase/category, not the private API response.
