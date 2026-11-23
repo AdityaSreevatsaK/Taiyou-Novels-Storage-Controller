@@ -76,3 +76,18 @@ HF API errors or dataset paths:
   body, headers or URL.
 
 These numbers diagnose the phase/category, not the private API response.
+
+## Third-run finding (2026-11-24)
+
+The second attempt of workflow run #45124863333 used the refreshed
+`HF_DISPOSABLE_TEST_TOKEN`, successfully authenticated, created private
+synthetic source/destination datasets and performed a staged partial copy. It
+failed in the live `remote_backup()` resume stage with a `ValueError`.
+The final receipt and independently verified snapshot were **not** confirmed.
+
+The next diagnostic attempt adds only two allowlisted numeric fields:
+`Acceptance error origin` (1 Hugging Face library, 2 controller backup,
+3 acceptance harness, 4 another controller module, 9 other) and
+`Acceptance harness guard` (0 external/unknown, 1 expected resumed-copy
+count mismatch, 2 preflight fixture-count mismatch, 3 rerun was not
+idempotent). It suppresses all raw API errors and private dataset paths.
