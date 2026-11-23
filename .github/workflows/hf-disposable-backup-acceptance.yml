@@ -1,5 +1,5 @@
 name: "HF - Disposable remote backup acceptance"
-# Re-run on master merge to capture privacy-safe numeric acceptance diagnostics.
+# Re-run on master merge with authenticated HF owner and numeric HTTP status diagnostics.
 
 on:
   push:
