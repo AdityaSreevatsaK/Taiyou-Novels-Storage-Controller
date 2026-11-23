@@ -7,6 +7,7 @@ from zipfile import ZipFile
 from io import BytesIO
 
 from taiyou_storage.core import validate_catalogue
+from taiyou_storage.github_output import safe_metrics
 from taiyou_storage.disposable_backup_acceptance import (
     acceptance, main, repositories, synthetic_files,
 )
@@ -48,6 +49,10 @@ class DisposableBackupAcceptanceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             acceptance(NoCall(), "AdityaSreevatsaK/Example",
                        "AdityaSreevatsaK/Example", "synthetic-token")
+
+    def test_public_logs_only_receive_numeric_failure_diagnostics(self):
+        metrics = safe_metrics("Acceptance stage: 6\nAcceptance error code: 3\nPrivate file: hidden")
+        self.assertEqual(metrics, [("Acceptance stage", "6"), ("Acceptance error code", "3")])
 
     def test_main_requires_trusted_master_context(self):
         with patch.dict(os.environ, {
