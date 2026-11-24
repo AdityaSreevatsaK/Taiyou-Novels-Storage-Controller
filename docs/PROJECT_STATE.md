@@ -24,6 +24,19 @@ dataset creation permission, report the test as **blocked**, not passed.
 All previous historical baseline observations below remain dated evidence,
 not statements of the latest live GitHub state.
 
+## Dated backup safety change: 24 November 2026 (proposed until merged)
+
+The latest baseline checked for this work was `master`
+`9cfb59b3cbb42f8a2cb993948952dee12698d1c0`. A targeted
+safety change makes the remote-first backup and its read-only readiness
+scan reject source LFS objects lacking an Xet hash **before** any
+destination commit. Pinned `huggingface_hub==1.33.0` requires this hash
+for cross-repository LFS duplication, even if a SHA-256 is available for
+remote identity verification. The existing explicit `full-verified`
+mode remains available. No production data changes are part of this
+code change. This statement is proposed implementation, not evidence
+that the live synthetic acceptance completed successfully.
+
 ## Repository baseline
 
 | Item | Verified state at baseline |
