@@ -111,3 +111,26 @@ This is diagnostic evidence, **not** a successful backup receipt. If confirmed,
 the production remote-first path must fail safely before creating a partially
 copyable snapshot, and the separately selected `full-verified` backup mode can
 serve as an explicit alternative. No silent fallback is allowed.
+
+## Explicit full-verified synthetic backup acceptance (proposed)
+
+A **separate** master-gated workflow,
+`hf-disposable-full-verified-acceptance.yml`, tests the already implemented
+`actions.copy_to_private_backup()` path with a dedicated
+`HF_DISPOSABLE_TEST_TOKEN`. This is not a silent fallback from remote-first.
+
+- Create fresh private synthetic source and destination datasets using a
+  unique GitHub run/attempt suffix; never overwrite or delete repos.
+- Upload only synthetic EPUB/ZIP/cover/catalogue fixtures into the source.
+- Use the existing full-verified implementation, scoped **inside the test
+  subprocess** to the disposable source. Never reference production.
+- Read the private manifest and every restored file from the pinned backup
+  revision. Verify independent SHA-256, manifest sizes, exact source inventory
+  and unchanged synthetic original source revision.
+- Publish only source-file count, snapshot-verified and verified-complete
+  numeric metrics. No private artefacts or raw exception messages.
+
+A successful run proves a small **live synthetic** full-byte backup and
+rehydration rehearsal, not restoration of an actual production library. The
+temporary runner may download synthetic binaries. This mode remains an
+explicit operator choice for production backup operations.
