@@ -48,6 +48,38 @@ independent byte-and-manifest verification stage is included. **A planned
 or CI-passing test is not a successful live acceptance test.** Confirm
 the exact post-merge Actions run and its numeric verification metrics.
 
+## Confirmed live synthetic HF backup acceptance: 24 November 2026
+
+Fresh `master` at
+`e5efbf20dc63de60874ee1457c040b380aafeeca` contains the
+fail-fast remote-copy safeguard and separate full-verified synthetic
+acceptance workflow. Master CI run
+[#45436985001](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/runs/45436985001)
+and the code release workflow
+[#45437129077](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/runs/45437129077)
+both concluded `success`. There were no production dataset mutations.
+
+**Live synthetic results:**
+- Remote-first test
+  [#45435388468](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/runs/45435388468)
+  failed with two LFS files lacking Xet and the exact expected pinned-Hub
+  cross-repository duplication error. Do **not** certify remote-first for
+  this object class.
+- Remote-first and read-only readiness now reject such LFS files before
+  copying, delivered in
+  [PR #67](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/pull/67)
+  at `479eaed89e085e1fc5745db1a211a64363cd1177`.
+- Explicit full-verified test
+  [#45436984800](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/runs/45436984800)
+  concluded **success**, with 6 source objects, 1 verified private snapshot,
+  1 completed independent per-object byte/SHA-256 and manifest recovery check.
+  The source revision was unchanged. This proves synthetic live acceptance,
+  not that a production backup exists or a production restore was exercised.
+
+The disposable datasets remain private, retained for inspection, and are
+not automatically deleted. Future agents must refresh GitHub and Hugging Face
+evidence rather than treating these dated results as current production state.
+
 ## Repository baseline
 
 | Item | Verified state at baseline |
