@@ -112,7 +112,7 @@ the production remote-first path must fail safely before creating a partially
 copyable snapshot, and the separately selected `full-verified` backup mode can
 serve as an explicit alternative. No silent fallback is allowed.
 
-## Explicit full-verified synthetic backup acceptance (proposed)
+## Explicit full-verified synthetic backup acceptance (live verified, 24 November 2026)
 
 A **separate** master-gated workflow,
 `hf-disposable-full-verified-acceptance.yml`, tests the already implemented
@@ -134,3 +134,33 @@ A successful run proves a small **live synthetic** full-byte backup and
 rehydration rehearsal, not restoration of an actual production library. The
 temporary runner may download synthetic binaries. This mode remains an
 explicit operator choice for production backup operations.
+
+## Confirmed evidence, 24 November 2026
+
+- [Remote-first compatibility probe #45435388468](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/runs/45435388468):
+  completed **failure**. Numeric-only evidence: `Acceptance stage: 6`,
+  `Acceptance LFS without Xet: 2`,
+  `Acceptance HF missing Xet error: 1`. These are synthetic files,
+  not production files. This confirms that the pinned Hub client's
+  remote-first copy cannot duplicate these two objects.
+- [Remote-copy early-failure safety PR #67](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/pull/67):
+  merged `479eaed89e085e1fc5745db1a211a64363cd1177`.
+  Read-only readiness and remote-first backup reject uncopyable LFS
+  metadata before creating any copy commits; normal Git files still
+  work without Xet, and no automatic download fallback is introduced.
+- [Full-verified synthetic acceptance #45436984800](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/runs/45436984800):
+  completed **success** on `master`
+  `e5efbf20dc63de60874ee1457c040b380aafeeca`.
+  GitHub Actions reports `Source files: 6`,
+  `Snapshot verified: 1`, `Verified complete: 1`.
+  The test fetched the private backup manifest and **every** copied
+  synthetic source file, compared each SHA-256 and byte content,
+  verified the original source revision, and confirmed the expected
+  synthetic fixture contents. No production dataset was accessed or
+  changed.
+
+**Interpretation:** one synthetic full-byte private backup and independent
+recovery rehearsal is verified; remote-first Xet-less LFS support is
+unavailable in the currently pinned Hub client. Neither result certifies
+an actual production backup or implements automated whole-library restore.
+Both synthetic test datasets remain private and retained for inspection.
