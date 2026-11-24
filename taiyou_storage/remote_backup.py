@@ -74,6 +74,22 @@ def _identity_match(source: RemoteIdentity, destination: RemoteIdentity) -> bool
     return False
 
 
+
+def _require_xet_copyable(files: dict[str, RemoteIdentity]) -> None:
+    """Fail before commits when pinned HF cannot duplicate legacy LFS.
+
+    huggingface_hub 1.33.0 requires an Xet hash for cross-repository
+    LFS duplication. A valid SHA-256 is sufficient to *verify* a
+    snapshot object, but not to *create* it using CommitOperationCopy.
+    Do not silently download/reupload or certify an incomplete snapshot.
+    """
+    if any(identity.sha256 and not identity.xet_hash for identity in files.values()):
+        raise ActionError(
+            "Remote-first copy cannot duplicate LFS objects without Xet "
+            "metadata. Use explicit full-verified backup mode instead."
+        )
+
+
 def preview_remote_backup(api, backup_repo: str, token: str) -> dict[str, int]:
     """Read-only production preflight for the GitHub Actions remote-first backup.
 
@@ -94,6 +110,7 @@ def preview_remote_backup(api, backup_repo: str, token: str) -> dict[str, int]:
     )
     if unverifiable:
         raise ActionError("Some source files lack verifiable cryptographic identities")
+    _require_xet_copyable(sources)
 
     destination_rev = private_dataset(api, backup_repo, token)
     existing = _tree(api, backup_repo, destination_rev, token)
@@ -143,6 +160,7 @@ def remote_backup(api, backup_repo: str, token: str, *, source_repo: str = DEFAU
     if any(not (item.sha256 or item.xet_hash or item.blob_id)
            for item in source_files.values()):
         raise ActionError("Source object hashes unavailable; use full-verified backup mode")
+    _require_xet_copyable(source_files)
     ensure_backup_private(api, backup_repo, token)
     dest_rev = private_dataset(api, backup_repo, token)
     prefix = f"snapshots/{source_rev}/files/"
