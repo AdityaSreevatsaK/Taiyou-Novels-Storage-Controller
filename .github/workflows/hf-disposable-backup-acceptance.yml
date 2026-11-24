@@ -1,5 +1,5 @@
 name: "HF - Disposable remote backup acceptance"
-# On master merge, diagnose ValueError origin through allowlisted numeric metrics only.
+# On master merge, classify Xet-less LFS copy capability with aggregate numeric diagnostics.
 
 on:
   push:

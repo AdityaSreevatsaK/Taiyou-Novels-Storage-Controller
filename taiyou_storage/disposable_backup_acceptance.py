@@ -20,6 +20,7 @@ OWNER = "AdityaSreevatsaK"
 PREFIX = "Taiyou-Backup-Acceptance"
 BOOK_ID = "b" * 24
 STAGE = 0
+LFS_WITHOUT_XET = 0
 
 
 def stage(number: int) -> None:
@@ -119,6 +120,19 @@ def acceptance(api, source: str, destination: str, token: str) -> dict[str, int]
     )
     src_rev = private_revision(api, source, token)
 
+    # HF 1.33.0 requires xet_hash when duplicating LFS cross-repository.
+    # Diagnose only with aggregate counts, never private paths or metadata.
+    global LFS_WITHOUT_XET
+    remote_infos = api.get_paths_info(
+        repo_id=source, repo_type="dataset", revision=src_rev,
+        paths=sorted(fixture), token=token,
+    )
+    LFS_WITHOUT_XET = sum(
+        bool(getattr(entry, "lfs", None))
+        and not bool(getattr(entry, "xet_hash", None))
+        for entry in remote_infos
+    )
+
     # Scoped to this test process. Production entry points are not changed.
     # source_repo MUST be explicit because its function default is bound
     # to production at definition time.
@@ -198,6 +212,8 @@ def main() -> int:
               file=sys.stderr)
         return 2
     stage(0)
+    global LFS_WITHOUT_XET
+    LFS_WITHOUT_XET = 0
     try:
         import huggingface_hub
         if huggingface_hub.__version__ != "1.33.0":
@@ -214,6 +230,7 @@ def main() -> int:
         print(f"Acceptance token owner match: {int(owner == OWNER)}")
         result = acceptance(api, source, destination, token)
         print(f"Acceptance stage: {STAGE}")
+        print(f"Acceptance LFS without Xet: {LFS_WITHOUT_XET}")
         for key, value in result.items():
             # Only numeric metrics, never novel names, dataset IDs or URLs.
             print(f"{key}: {value}")
@@ -222,6 +239,9 @@ def main() -> int:
     except Exception as error:
         # Public GitHub job logs must never contain private HF error bodies.
         print(f"Acceptance stage: {STAGE}")
+        print(f"Acceptance LFS without Xet: {LFS_WITHOUT_XET}")
+        # Exact upstream signature only. Never expose exception messages.
+        print(f"Acceptance HF missing Xet error: {int(type(error) is ValueError and str(error).startswith('Cannot duplicate LFS file') and 'no xet hash' in str(error))}")
         code = {"ValueError": 1, "HTTPError": 2, "HfHubHTTPError": 3, "RepositoryNotFoundError": 4, "TypeError": 5, "AttributeError": 6, "ConnectionError": 7}.get(type(error).__name__, 99)
         print(f"Acceptance error code: {code}")
         # Never print error strings, file paths or remote API responses.

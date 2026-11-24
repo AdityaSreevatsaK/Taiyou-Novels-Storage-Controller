@@ -33,6 +33,7 @@ METRICS = frozenset({
     "Objects eligible for remote copy", "Acceptance stage", "Acceptance error code",
     "Acceptance token owner match", "Acceptance HTTP status",
     "Acceptance error origin", "Acceptance harness guard",
+    "Acceptance LFS without Xet", "Acceptance HF missing Xet error",
     "Verified novel ZIPs", "Verified ZIP bytes",
     "Total novels in library", "Covers in archive", "New covers",
     "Covers to update", "Covers to link", "Unchanged",

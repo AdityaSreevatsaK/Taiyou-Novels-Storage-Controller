@@ -71,6 +71,17 @@ class DisposableBackupAcceptanceTests(unittest.TestCase):
             ("Acceptance error origin", "1"), ("Acceptance harness guard", "0")
         ])
 
+    def test_xet_diagnostics_are_numeric_only(self):
+        metrics = safe_metrics(
+            "Acceptance LFS without Xet: 3\n"
+            "Acceptance HF missing Xet error: 1\n"
+            "Private file path: must not appear"
+        )
+        self.assertEqual(metrics, [
+            ("Acceptance LFS without Xet", "3"),
+            ("Acceptance HF missing Xet error", "1"),
+        ])
+
     def test_main_requires_trusted_master_context(self):
         with patch.dict(os.environ, {
             "GITHUB_REPOSITORY": "another/repo",

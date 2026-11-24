@@ -91,3 +91,23 @@ The next diagnostic attempt adds only two allowlisted numeric fields:
 `Acceptance harness guard` (0 external/unknown, 1 expected resumed-copy
 count mismatch, 2 preflight fixture-count mismatch, 3 rerun was not
 idempotent). It suppresses all raw API errors and private dataset paths.
+
+## Cross-repository Xet compatibility probe (24 November 2026)
+
+An earlier real run copied a regular Git JSON object successfully but reached a
+`huggingface_hub`-origin `ValueError` in the multi-object resume phase.
+The pinned upstream Hugging Face 1.33.0 client requires an `xet_hash` to
+duplicate a cross-repository LFS object. The upstream library can raise a
+`ValueError` if LFS metadata lacks the required Xet hash.
+
+The test-only harness now checks actual source fixture metadata via
+`get_paths_info` and publishes two **numeric-only** aggregates:
+`Acceptance LFS without Xet` (count of LFS fixture objects with no Xet hash)
+and `Acceptance HF missing Xet error` (1 only when the caught upstream
+`ValueError` matches that exact signature). It never publishes object
+names, token details or exception content.
+
+This is diagnostic evidence, **not** a successful backup receipt. If confirmed,
+the production remote-first path must fail safely before creating a partially
+copyable snapshot, and the separately selected `full-verified` backup mode can
+serve as an explicit alternative. No silent fallback is allowed.
