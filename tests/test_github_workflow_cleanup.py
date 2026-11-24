@@ -8,7 +8,8 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 RETAINED = {
     "ci.yml", "hf-inspect.yml", "hf-private-backup.yml",
     "hf-private-reports.yml", "hf-cloud-import.yml", "hf-live-readiness.yml", "hf-restore-genres.yml",
-    "hf-upload-covers-artifact.yml", "hf-disposable-backup-acceptance.yml", "release.yml",
+    "hf-upload-covers-artifact.yml", "hf-disposable-backup-acceptance.yml",
+    "hf-disposable-full-verified-acceptance.yml", "release.yml",
 }
 RETIRED = {
     "hf-migrate-readable-folders.yml",

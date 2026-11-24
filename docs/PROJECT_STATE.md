@@ -37,6 +37,17 @@ mode remains available. No production data changes are part of this
 code change. This statement is proposed implementation, not evidence
 that the live synthetic acceptance completed successfully.
 
+## 24 November 2026: proposed full-verified disposable test
+
+After the fail-fast remote-copy safety change merged on `master` at
+`479eaed89e085e1fc5745db1a211a64363cd1177`, a separate test-only
+workflow has been proposed for the already implemented explicit
+`full-verified` backup path. It uses only `HF_DISPOSABLE_TEST_TOKEN` and
+separate private synthetic datasets; it does not write to production. An
+independent byte-and-manifest verification stage is included. **A planned
+or CI-passing test is not a successful live acceptance test.** Confirm
+the exact post-merge Actions run and its numeric verification metrics.
+
 ## Repository baseline
 
 | Item | Verified state at baseline |

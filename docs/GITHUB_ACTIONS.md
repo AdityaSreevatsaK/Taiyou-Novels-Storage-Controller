@@ -135,6 +135,22 @@ namespace. If the secret exists only in a GitHub Environment rather than as a
 without contacting HF. See [the isolated acceptance runbook](DISPOSABLE_BACKUP_ACCEPTANCE.md).
 A green ordinary CI run does not substitute for a successful live synthetic run.
 
+## Full-verified synthetic acceptance (no production writes)
+
+[**HF - Disposable full-verified backup acceptance**](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/workflows/hf-disposable-full-verified-acceptance.yml)
+tests the explicit `full-verified` mode on new PRIVATE synthetic datasets
+using only `HF_DISPOSABLE_TEST_TOKEN`. Its automatic first run occurs only
+when its workflow YAML is merged to `master`, and it can be manually invoked
+on `master`. This test downloads synthetic files to the temporary cloud
+runner, uploads the verified private snapshot, and independently checks every
+restored file's SHA-256, manifest and original source revision. It does not
+access production, delete repositories or publish detailed artefacts. It
+retains disposable private datasets for later review.
+
+This does **not** change the production remote-first default and does not
+silently fall back to full-verified. See
+[synthetic acceptance runbook](DISPOSABLE_BACKUP_ACCEPTANCE.md).
+
 ## Remote-first backups (no novel downloads to your laptop)
 
 [**HF - Back up entire dataset PRIVATELY**](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/workflows/hf-private-backup.yml)
