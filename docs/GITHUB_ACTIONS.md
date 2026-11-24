@@ -152,6 +152,16 @@ now offers two modes:
   but supports environments where HF server-side copies fail or some object
   identity is unavailable.
 
+**Cross-repository LFS compatibility:** the pinned `huggingface_hub==1.33.0`
+client requires an Xet hash for server-side duplication of LFS objects.
+An LFS object with a valid SHA-256 but no Xet hash is verifiable but not
+copyable through `CommitOperationCopy`. Both the metadata-only readiness
+check and remote-first backup now **fail before any backup commit** when such
+source objects are detected. This is a deliberate fail-closed safeguard, not
+a completed backup. Choose `full-verified` **explicitly** if you need to
+transfer those files via the temporary cloud runner; no automatic fallback
+is attempted.
+
 Both modes keep the original source dataset unchanged, use the existing
 `HF_STORAGE_CONTROLLER_TOKEN` Actions secret, and **never publish book bytes,
 file names or detailed reports to public GitHub Actions**. The backup must be
