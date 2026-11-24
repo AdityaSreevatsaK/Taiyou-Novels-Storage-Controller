@@ -8,7 +8,7 @@ import unittest
 
 from taiyou_storage.actions import ActionError
 from taiyou_storage.core import DEFAULT_REPO
-from taiyou_storage.remote_backup import RemoteIdentity, _identity_match, remote_backup
+from taiyou_storage.remote_backup import RemoteIdentity, _identity_match, remote_backup, preview_remote_backup
 
 BACKUP = "AdityaSreevatsaK/Taiyous-Novels-Backup"
 
@@ -37,6 +37,7 @@ class FakeHub:
         self.commits = []
         self.fail_at = None
         self.change_source_on_commit = False
+        self.xet_missing = False
 
     def dataset_info(self, repo, token):
         assert token == self.token
@@ -53,7 +54,8 @@ class FakeHub:
             yield SimpleNamespace(
                 path=path, size=len(content), blob_id=git_blob(content),
                 lfs={"sha256": sha256(content).hexdigest()} if is_binary else None,
-                xet_hash=None)
+                xet_hash=(None if self.xet_missing or not is_binary
+                          else sha256(b'xet:' + content).hexdigest()))
 
     def create_commit(self, *, repo_id, repo_type, token, parent_commit,
                       operations, commit_message):
@@ -111,6 +113,25 @@ class RemoteBackupTests(unittest.TestCase):
         self.assertEqual(result["Objects copied"], 2)
         self.assertEqual(result["Previously verified objects reused"], 2)
         self.assertEqual(result["Snapshot verified"], 1)
+
+    def test_uncopyable_lfs_without_xet_fails_before_any_remote_commit(self):
+        hub = FakeHub()
+        hub.xet_missing = True
+        with self.assertRaisesRegex(ActionError, "without Xet"):
+            preview_remote_backup(hub, BACKUP, hub.token)
+        with self.assertRaisesRegex(ActionError, "without Xet"):
+            remote_backup(hub, BACKUP, hub.token, batch_size=2)
+        self.assertEqual(hub.commits, [])
+
+    def test_regular_git_files_do_not_need_xet(self):
+        hub = FakeHub()
+        listing = {item.path: item for item in hub.list_repo_tree(
+            repo_id=DEFAULT_REPO, repo_type="dataset",
+            revision=hub.source_rev, recursive=True, expand=True, token=hub.token)}
+        self.assertIsNone(listing["data/library.json"].lfs)
+        self.assertIsNone(listing["data/library.json"].xet_hash)
+        result = preview_remote_backup(hub, BACKUP, hub.token)
+        self.assertEqual(result["Source files"], 4)
 
     def test_same_size_but_different_bytes_fail_closed(self):
         hub = FakeHub()
