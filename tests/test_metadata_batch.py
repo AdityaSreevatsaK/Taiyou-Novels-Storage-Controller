@@ -174,6 +174,29 @@ class ResearchImportTests(unittest.TestCase):
                 os.chdir(old)
 
 
+class SourceStatusParsingTests(unittest.TestCase):
+    def test_novelfull_status_aliases_are_source_verified(self):
+        for raw, expected in (("On Hiatus", "Hiatus"),
+                              ("Discontinued", "Dropped"),
+                              ("On Hold", "Hiatus"),
+                              ("OnGoing", "Ongoing")):
+            with self.subTest(raw=raw):
+                html = NOVEL_HTML.replace("Status: <a href=\"/status/Completed\">Completed",
+                                          f"Status: <a href=\"/status/{raw}\">{raw}")
+                result = verified_metadata(
+                    html, NOVEL, "Abe the Wizard",
+                    "The Mass Of Eating Melon Seeds"
+                )
+                self.assertEqual(result.get("status"), expected)
+
+    def test_unknown_status_is_not_invented(self):
+        html = NOVEL_HTML.replace("Status: <a href=\"/status/Completed\">Completed",
+                                  "Status: <a href=\"/status/Unknown\">Unknown")
+        result = verified_metadata(html, NOVEL, "Abe the Wizard",
+                                   "The Mass Of Eating Melon Seeds")
+        self.assertNotIn("status", result)
+
+
 class PublicSourceTests(unittest.TestCase):
     def test_freewebnovel_scoped_fields_and_summary(self):
         data = verified_metadata(FREE_HTML, FREE, "Sample Fantasy", "Test Writer")
