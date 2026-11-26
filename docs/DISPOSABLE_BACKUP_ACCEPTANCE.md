@@ -1,5 +1,27 @@
 # Isolated Hugging Face remote-backup acceptance
 
+> **Historical acceptance evidence only, updated 26 November 2026.**
+> The three temporary test-only GitHub Actions workflows have been retired
+> after their completed live probes. Their Python harnesses, offline tests and
+> private synthetic datasets remain available for future engineering review.
+> Do not attempt to dispatch the deleted workflow YAMLs or treat synthetic
+> success as a production dataset backup.
+
+## Accepted synthetic results and limitations
+
+| Test | GitHub run | Verified evidence |
+| --- | --- | --- |
+| Remote-first Xet compatibility | [#45435388468](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/runs/45435388468) | **Failed as expected**: 2 synthetic LFS objects lacked Xet; pinned Hub duplication rejected them |
+| Full-verified backup and recovery | [#45436984800](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/runs/45436984800) | **Success**: 6 synthetic source files, 1 verified private snapshot, independent byte/SHA-256 recovery |
+| Retriever-shaped cloud import | [#45836547414](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/runs/45836547414) | **Success**: 3 synthetic ZIPs imported, 1 cover imported, independent content checks, second import made zero commits |
+
+Remote-first backup now refuses non-copyable Xet-less LFS objects **before**
+committing a partial snapshot. The full-verified alternative remains an
+**explicit** choice. No production HF dataset was modified in these tests.
+No actual cross-repository GitHub download-artifact job was tested and no
+real novel was imported in this acceptance.
+
+
 This check exercises the existing Controller `remote_backup()` against synthetic
 EPUB, ZIP, PNG and v1 catalogue data. It never accesses production Hugging Face
 datasets. Its Python module is `taiyou_storage/disposable_backup_acceptance.py`.
@@ -7,8 +29,8 @@ datasets. Its Python module is `taiyou_storage/disposable_backup_acceptance.py`.
 ## Execution
 
 - Workflow: [HF - Disposable remote backup acceptance](../.github/workflows/hf-disposable-backup-acceptance.yml).
-- Runs once automatically when that workflow is added/changed on `master`,
-  or on an explicit `workflow_dispatch` from trusted `master`.
+- **Retired 26 November 2026** after the diagnostic run. This workflow YAML
+  is no longer present on `master`; historical run links remain accessible.
 - Requires `HF_DISPOSABLE_TEST_TOKEN` as a **repository-level GitHub Actions
   secret** (not `HF_STORAGE_CONTROLLER_TOKEN`). If unavailable, it fails before
   contacting Hugging Face.
@@ -114,8 +136,8 @@ serve as an explicit alternative. No silent fallback is allowed.
 
 ## Explicit full-verified synthetic backup acceptance (live verified, 24 November 2026)
 
-A **separate** master-gated workflow,
-`hf-disposable-full-verified-acceptance.yml`, tests the already implemented
+A **previously deployed and now retired** master-gated workflow,
+`hf-disposable-full-verified-acceptance.yml`, tested the already implemented
 `actions.copy_to_private_backup()` path with a dedicated
 `HF_DISPOSABLE_TEST_TOKEN`. This is not a silent fallback from remote-first.
 
