@@ -50,9 +50,25 @@ cover images, matches by exact normalised title, local ZIP basename or stable
 24-character novel ID, then uploads the novels and their matched covers
 **together in the same revision-guarded commit**. A nested
 `covers/Novel One/cover.jpg` or `covers/<novel-id>/cover.png` is also valid.
-Covers are optional. No images are downloaded from the internet automatically. The automatic cover matching in this flow applies to **separately supplied local sidecar images** in `covers/`; it does not yet extract embedded artwork from each source ZIP/OPF-declared EPUB and write a standalone `coverPath` in the same upload. That broader requirement remains open in [issue #54](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/54).
+Covers are optional. No images are downloaded from the internet automatically.
+When no matching local sidecar is available, the uploader now extracts a
+**genuine** cover from a validated source ZIP, preferring a single
+EPUB2/EPUB3 OPF-declared image, then an unambiguous standalone `cover.*`
+image alongside `source.epub` in the source ZIP. It rejects unsafe paths,
+oversized/bad images, undeclared chapter illustrations and ambiguous candidates.
+Missing/invalid embedded images do **not** block a valid novel import: they
+remain unlinked, never replaced with stock artwork. An existing
+`metadata.coverPath` is always retained and never silently replaced by
+embedded artwork. A matched local `covers/` sidecar takes precedence.
 
-Unmatched, ambiguous, duplicate, invalid or unexpectedly conflicting covers
+The approved preview includes the extracted-artwork action and image digest.
+The same revision-guarded batch commit contains the cover file and updated
+`metadata.coverPath` alongside the ZIP, EPUB, inspection manifest and
+catalogue. `--no-covers` skips both sidecars and embedded extraction.
+A later replay can add a missing cover without re-uploading unchanged EPUB/ZIP
+bytes. Existing 104 repaired covers are untouched.
+
+Unmatched, ambiguous, duplicate, invalid or unexpectedly conflicting **local sidecar** covers
 are shown as `COVER_CONFLICT` in `reports/bulk-upload-plan.csv`; **all writes
 are blocked**. There is no fuzzy matching. Move unrelated covers out of
 `covers/` or use `--no-covers` when you intend a novels-only upload. Existing
