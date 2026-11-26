@@ -6,12 +6,15 @@ from contextlib import chdir
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import json
+from io import BytesIO
+from hashlib import sha256
+from zipfile import ZipFile
 import unittest
 
 from taiyou_storage.cloud_import import BundleError, check_bundle
 from taiyou_storage.core import sha256_file
 from taiyou_storage.upload import main as upload_main
-from tests.test_smoke_integration import FakePrivateHub, REPO, fake_cloud, make_novel, quiet_run
+from tests.test_smoke_integration import FakePrivateHub, REPO, fake_cloud, quiet_run
 
 
 def retriever_bundle(root: Path, count: int = 4) -> Path:
@@ -20,10 +23,30 @@ def retriever_bundle(root: Path, count: int = 4) -> Path:
     novels.mkdir(parents=True)
     rows = []
     for i in range(count):
-        path = make_novel(
-            novels, f"completed-{i:02d}.zip", f"Verified Synthetic Series {i:02d}",
-            f"https://example.invalid/verified-{i:02d}"
-        )
+        path = novels / f"completed-{i:02d}.zip"
+        epub_buffer = BytesIO()
+        title = f"Verified Synthetic Series {i:02d}"
+        with ZipFile(epub_buffer, "w") as epub:
+            epub.writestr("mimetype", "application/epub+zip")
+            epub.writestr("META-INF/container.xml",
+                          '<container><rootfile full-path="book.opf"/></container>')
+            epub.writestr("book.opf",
+                          f"<package><metadata><title>{title}</title>"
+                          "<creator>Test Author</creator></metadata></package>")
+            epub.writestr("chapter.xhtml", "<p>Synthetic chapter.</p>")
+        chapter = b"Only original synthetic test content."
+        with ZipFile(path, "w") as archive:
+            archive.writestr("novel/source.epub", epub_buffer.getvalue())
+            archive.writestr("novel/metadata.json", json.dumps({
+                "title": title, "author": "Test Author",
+                "source_url": f"https://example.invalid/verified-{i:02d}",
+                "chapter_count": 1,
+            }))
+            archive.writestr("novel/chapters.json", json.dumps([{
+                "position": 1, "file": "chapter_0001.txt",
+                "sha256": sha256(chapter).hexdigest(), "title": "First"
+            }]))
+            archive.writestr("novel/chapter_0001.txt", chapter)
         rows.append({
             "title": f"Verified Synthetic Series {i:02d}",
             "file": "novels/" + path.name,
@@ -95,8 +118,8 @@ class RetrieverControllerHandoffTests(unittest.TestCase):
             root = Path(temp)
             incoming = retriever_bundle(root)
             path = incoming / "novels" / "completed-00.zip"
-            with path.open("ab") as stream:
-                stream.write(b"tamper")
+            original = path.read_bytes()
+            path.write_bytes(original[:-1] + bytes([original[-1] ^ 1]))
             with self.assertRaisesRegex(BundleError, "SHA-256"):
                 check_bundle(incoming)
 
