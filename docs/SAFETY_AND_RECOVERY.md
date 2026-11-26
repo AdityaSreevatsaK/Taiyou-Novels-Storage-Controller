@@ -46,6 +46,53 @@ py -m taiyou_storage.reset --apply   # Interactive, verified-backup-first reset
 
 **No GitHub Action can clear production data or delete the repository.** The old backup-free clear workflow/command were retired; the remaining content reset is local-only and backup-first.
 
+## Verified private backup and recovery review (no automatic restore)
+
+**Proof already available, synthetic only:** the independent
+[full-verified acceptance run #45436984800](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/runs/45436984800)
+successfully copied six synthetic objects to a separate **private**
+disposable HF dataset, verified its private manifest at a pinned
+revision, independently re-read all objects, checked their lengths,
+SHA-256 and byte equivalence, and confirmed the original synthetic
+source revision was unchanged. This did **not** back up or restore
+the production novel dataset.
+
+For any future **production** backup, the operator must separately
+authorise that data-changing operation, verify the destination dataset
+is private and distinct from the source, and choose the
+[retained private backup workflow](GITHUB_ACTIONS.md) explicitly.
+The default remote-first mode rejects source LFS files lacking Xet
+metadata before creating a partial copy; `full-verified` is the
+previously validated synthetic alternative, but it downloads original
+bytes onto the temporary cloud runner and may take substantial
+time, disk space and bandwidth. No mode may silently fall back or
+overwrite a conflicting private snapshot.
+
+Before calling an actual private snapshot *recoverable*:
+
+1. Record the immutable production **source SHA** and independent
+   backup **destination SHA** in a private operator record.
+2. Confirm the backup manifest or receipt lists exactly the
+   expected original `data/` files and any required sidecars,
+   excluding no personal-state assets.
+3. Compare independent SHA-256 hashes for each original and
+   destination object at those pinned revisions. If a receipt uses
+   remote object identities, confirm the identity types are
+   comparable and never accept equal sizes alone.
+4. Rehydrate representative EPUBs, ZIP archives, covers, catalogue,
+   and personal-state documents **into an isolated disposable
+   location**, and verify their exact bytes and safe paths without
+   editing production.
+5. Confirm private access controls and unchanged original
+   source revision. Preserve all reports privately.
+
+Until all checks pass, a metadata-only readiness report or
+`Snapshot verified` count is **not** an independently verified
+production restore. There is still no automatic whole-library
+restore; an actual recovery requires a separately reviewed,
+revision-guarded restoration procedure. Do not reset or delete
+production to test recovery.
+
 ## Recovery boundaries
 
 - A catalogue backup saves `data/library.json` only; it is **not** a full copy of EPUBs, ZIPs, covers or personal sidecars.
