@@ -166,12 +166,20 @@ class EmbeddedCoverIntegrationTests(unittest.TestCase):
             item = plan([], [(path, meta, epub, digest)], {}, set(), readable_new=True)[0]
             target = item["directory"] + "/cover.png"
             hub = FakePrivateHub(root)
-            hub.inject(target, b"different existing cover contents")
             with fake_cloud(hub):
-                status, out = quiet_run(upload_main, [str(novels), "--repo", REPO, "--apply"])
+                # A valid existing catalogue is essential: an orphaned data/
+                # object would already fail the earlier dataset safety gate.
+                status, out = quiet_run(upload_main, [
+                    str(novels), "--repo", REPO, "--no-covers", "--apply"])
+                self.assertEqual(status, 0, out)
+                self.assertEqual(len(hub.commits), 1)
+                hub.inject(target, b"different existing cover contents")
+                status, out = quiet_run(upload_main, [
+                    str(novels), "--repo", REPO, "--apply"])
                 self.assertEqual(status, 2, out)
-                self.assertEqual(hub.commits, [])
-                self.assertNotIn("data/library.json", hub.files)
+                self.assertEqual(len(hub.commits), 1)
+                self.assertFalse(hub.books()[0]["metadata"].get("coverPath"))
+                self.assertEqual(hub.files[target], b"different existing cover contents")
 
     def test_true_new_novel_and_cover_share_one_commit(self):
         with TemporaryDirectory() as temp, chdir(temp):
