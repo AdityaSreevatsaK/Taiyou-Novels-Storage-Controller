@@ -604,6 +604,9 @@ def main(argv=None) -> int:
         cover_rows, cover_problems = (
             discover_covers(instructions, args.covers_folder)
             if not args.no_covers else ([], []))
+        from .embedded_covers import attach_embedded_covers
+        embedded_rows, missing_embedded = (
+            attach_embedded_covers(instructions) if not args.no_covers else ([], 0))
         # Only download the cover images that already occupy a proposed
         # destination; skip all other remote covers and novel artifacts.
         for item in instructions:
@@ -620,7 +623,7 @@ def main(argv=None) -> int:
                     (item.get("existing") or {}).get("metadata", {}).get("coverPath") != dest
                     and hashes.get(dest) != cover["sha256"]):
                 cover_problems.append(_plan_row(
-                    cover["path"], "COVER_CONFLICT",
+                    cover.get("path", item["path"]), "COVER_CONFLICT",
                     "Unlinked remote cover already exists at destination; review before overwrite"))
         cover_states = Counter()
         for item in instructions:
@@ -631,6 +634,8 @@ def main(argv=None) -> int:
             item["reason"] + ((" + cover " + cover_status(item, files, hashes))
                               if item.get("cover") else ""))
             for item in instructions)
+        preview_rows.extend(cover_rows)
+        preview_rows.extend(embedded_rows)
         preview_rows.extend(cover_problems)
         _save_upload_plan(args.report, preview_rows)
         planned = Counter(item["state"] for item in instructions)
@@ -645,6 +650,8 @@ def main(argv=None) -> int:
             "Existing novels to update": planned["UPDATE"],
             "Unchanged novels": planned["UNCHANGED"],
             "Matched local covers": len(cover_rows),
+            "Extracted embedded covers": len(embedded_rows),
+            "Missing source covers": missing_embedded,
             "New covers": cover_states["NEW"],
             "Updated covers": cover_states["UPDATE"],
             "Covers to link": cover_states["LINK"],
