@@ -88,8 +88,16 @@ def check_bundle(root: Path) -> dict[str, int]:
     # controller will verify their image bytes and identity before uploading.
     # Non-empty unrecognised image filenames are conflicts, not guessed matches.
     covers_dir = root / "covers"
-    if covers_dir.exists() and (not covers_dir.is_dir() or covers_dir.is_symlink()):
+    if covers_dir.is_symlink() or (covers_dir.exists() and not covers_dir.is_dir()):
         raise BundleError("Invalid covers directory")
+    if covers_dir.is_dir():
+        for candidate in covers_dir.rglob("*"):
+            if candidate.is_symlink():
+                raise BundleError("Symlink inside completed cover export")
+            if candidate.is_file():
+                if (candidate.suffix.casefold() not in {".jpg", ".jpeg", ".png", ".webp"}
+                        or not 0 < candidate.stat().st_size <= 12 * 1024 * 1024):
+                    raise BundleError("Unexpected or oversized image in completed cover export")
     return {"Verified novel ZIPs": len(expected), "Verified ZIP bytes": size_total}
 
 
