@@ -109,7 +109,7 @@ Use [**HF - Import Novel-Retriever bundle (cloud only)**](https://github.com/Adi
 
 Never publish the generated private preview reports or the novel artifact from this controller as GitHub Actions artifacts. Output contains only counts. This workflow uses the existing `HF_STORAGE_CONTROLLER_TOKEN` for **write** access to the private HF dataset and `NOVEL_LIBRARY_ACTIONS_TOKEN` when cross-repository GitHub artifact access needs explicit permission.
 
-This bridge supports **completed consolidated exports only**, not arbitrary partially downloaded chapter batches or unverified individual artefacts. The bulk uploader can attach uniquely matched local or exported sidecar covers, but does not yet extract embedded ZIP/OPF-declared EPUB cover artwork into `coverPath` during the same import; see [open issue #54](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/54). An invalid, expired or conflicted export fails without touching Hugging Face. If a previous HF batch was committed but a later batch failed, rerun the same export: the controller skips already committed matching novels. Files remain available in the original Retriever export run until GitHub's artifact retention period ends.
+This bridge supports **completed consolidated exports only**, not arbitrary partially downloaded chapter batches or unverified individual artefacts. The bulk uploader now attaches both uniquely matched standalone sidecar covers and validated EPUB/OPF-declared or unambiguous standalone covers from inside the source ZIP during the same revision-guarded import, without replacing existing linked covers. This was delivered in [PR #71](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/pull/71); missing or invalid artwork never becomes a guessed replacement. An invalid, expired or conflicted export fails without touching Hugging Face. If a previous HF batch was committed but a later batch failed, rerun the same export: the controller skips already committed matching novels. Files remain available in the original Retriever export run until GitHub's artifact retention period ends.
 
 No local download is required for exported Retriever novels. Files found **only on your Windows disk** must still be uploaded through the normal `01_bulk_upload.cmd` path.
 
@@ -123,56 +123,43 @@ a completed Novel-Retriever export artefact. The real producer writes a
 `conflicting_editions`/`invalid_archives` arrays. The Controller must
 verify the complete directory and every ZIP SHA-256 before preview.
 
-One isolated, master-gated **test-only** workflow,
-`hf-disposable-cloud-import-acceptance.yml`, exercises the same
+A completed, now-retired master-gated **test-only** workflow,
+`hf-disposable-cloud-import-acceptance.yml`, exercised the same
 `cloud_import.check_bundle` and `upload.main` implementation on
 fictional EPUBs, a declared cover, a newly created **private**
-disposable HF dataset and `HF_DISPOSABLE_TEST_TOKEN`. It tests:
+disposable HF dataset and `HF_DISPOSABLE_TEST_TOKEN`. It tested:
 read-only preview, exact bundle checksums, reviewed guarded upload,
 stable IDs, ZIP/EPUB/cover read-back, idempotent replay and rejection
 of invalid export cover symlinks. It never uses production
 `HF_STORAGE_CONTROLLER_TOKEN`, dispatches novel downloads or accesses
-the production library. A green offline CI check is not live HF proof.
+the production library. The real [live synthetic run #45836547414](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/runs/45836547414) **succeeded**: 3 source ZIPs verified and imported, 1 cover uploaded, a validated private catalogue and binary read-backs, and idempotent replay with no additional commit. This is synthetic dataset evidence, not a production HF import or live cross-repository artifact retrieval.
 
-The one-shot synthetic workflow can be retired after a successful
-evidence-backed run; retain production cloud-import and its explicit
-`apply_changes: false` default. No automatic production apply.
+The one-shot workflow YAML has since been **retired and deleted**. The guarded Python harness and synthetic offline tests remain for engineering reuse. The production cloud-import workflow still defaults to `apply_changes: false`. No automatic production apply.
 
 ## Disposable real-HF backup acceptance
 
-[**HF - Disposable remote backup acceptance**](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/workflows/hf-disposable-backup-acceptance.yml)
-is a gated test-only workflow. It uses only the repository Actions secret
-`HF_DISPOSABLE_TEST_TOKEN`, **never** the production storage token. On its
-initial merge to `master`, the workflow triggers once. It also supports manual
-runs on trusted `master`.
+**Historical only:** [Disposable remote-backup probe #45435388468](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/runs/45435388468) was a gated test-only workflow, now **retired and deleted**. It uses only the repository Actions secret
+`HF_DISPOSABLE_TEST_TOKEN`, **never** the production storage token. It executed on trusted `master` before retirement.
 
-The workflow creates two new **PRIVATE** run-specific synthetic datasets,
-uploads only fictional EPUB/ZIP/cover/catalogue fixtures, stages a partial
+The historical workflow created two new **PRIVATE** run-specific synthetic datasets,
+uploaded only fictional EPUB/ZIP/cover/catalogue fixtures, stages a partial
 copy, exercises actual `remote_backup()` recovery, verifies a zero-write
 rerun, and independently SHA-256-checks every fixture plus the private
 receipt. It does **not** access, alter or delete the production dataset, and
 does not delete the disposable datasets afterwards.
 
-The test token must have permission to create private datasets in the owner's
-namespace. If the secret exists only in a GitHub Environment rather than as a
-**repository Actions secret**, this workflow cannot access it and fails
-without contacting HF. See [the isolated acceptance runbook](DISPOSABLE_BACKUP_ACCEPTANCE.md).
-A green ordinary CI run does not substitute for a successful live synthetic run.
+The test discovered two synthetic LFS objects without Xet hashes, confirming an upstream cross-repository duplication limitation. The current Controller instead fails safely before partial remote-first copying of this object type. See [historical acceptance evidence](DISPOSABLE_BACKUP_ACCEPTANCE.md).
 
 ## Full-verified synthetic acceptance (no production writes)
 
-[**HF - Disposable full-verified backup acceptance**](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/workflows/hf-disposable-full-verified-acceptance.yml)
-tests the explicit `full-verified` mode on new PRIVATE synthetic datasets
-using only `HF_DISPOSABLE_TEST_TOKEN`. Its automatic first run occurs only
-when its workflow YAML is merged to `master`, and it can be manually invoked
-on `master`. This test downloads synthetic files to the temporary cloud
+**Historical only:** [Disposable full-verified backup run #45436984800](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/runs/45436984800) successfully tested the explicit `full-verified` mode on new PRIVATE synthetic datasets
+using only `HF_DISPOSABLE_TEST_TOKEN`. Its one-shot workflow has been **retired and deleted**, with its guarded Python harness retained. This test downloaded synthetic files to the temporary cloud
 runner, uploads the verified private snapshot, and independently checks every
 restored file's SHA-256, manifest and original source revision. It does not
 access production, delete repositories or publish detailed artefacts. It
 retains disposable private datasets for later review.
 
-This does **not** change the production remote-first default and does not
-silently fall back to full-verified. See
+The verified synthetic test **did not** change the production remote-first default or silently fall back to full-verified. See
 [synthetic acceptance runbook](DISPOSABLE_BACKUP_ACCEPTANCE.md).
 
 ## Remote-first backups (no novel downloads to your laptop)
@@ -219,7 +206,7 @@ The verification receipt lives inside the PRIVATE backup dataset at
 
 ## Limits
 
-- The current source-metadata parser and manual repair validator accept `Completed` and `Ongoing` only. Canonical `Hiatus` and `Dropped` support remains open in [issue #46](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/46); do not infer publication status from reading progress or chapter counts.
+- The source parser and manual repair validator support canonical `Completed`, `Ongoing`, `Hiatus` and `Dropped` (plus verified aliases), delivered by [PR #70](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/pull/70). Publication status must never be inferred from reading progress or chapter counts. Existing unknown statuses remain unchanged.
 
 GitHub Actions cannot access ZIP files that exist only on your Windows
 computer. New local uploads must first reach GitHub as a private permitted
@@ -230,6 +217,13 @@ small JSON content, so they scale considerably better to large catalogues.
 Any read/write operation that needs HF credentials requires Actions secrets.
 
 ## Retired workflows
+
+The one-shot disposable tests for remote-first Xet compatibility, full-verified
+backup and Retriever-shaped cloud import have now been removed from
+`.github/workflows/` after their 24–26 November runs. Their original
+synthetic Python test harnesses, offline regression tests and private-safe
+evidence remain. The actual production backup, cloud-import, inspection and
+readiness workflows are **retained**.
 
 The readable-folder migration was **completed and verified on 14 November
 2026**. Its production migration Action, acceptance/preflight/readiness Actions,
