@@ -14,7 +14,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from bs4 import BeautifulSoup, Tag
 
 from .core import normalized_title
-from .metadata_repair import MetadataRepairError, _source_key
+from .metadata_repair import MetadataRepairError, _source_key, SOURCE_STATUS_ALIASES
 
 MAX_HTML = 3 * 1024 * 1024
 SITES = ("freewebnovel.com", "novelfull.com", "scribblehub.com")
@@ -23,11 +23,7 @@ BOOK_PATHS = {
     "novelfull.com": re.compile(r"^/[a-z0-9][a-z0-9-]*\.html$", re.I),
     "scribblehub.com": re.compile(r"^/series/[0-9]+/[a-z0-9][a-z0-9-]*/$", re.I),
 }
-STATUS = {
-    "completed": "Completed", "complete": "Completed",
-    "ongoing": "Ongoing", "on going": "Ongoing",
-    "in progress": "Ongoing", "in-progress": "Ongoing",
-}
+STATUS = SOURCE_STATUS_ALIASES
 INVALID_TITLE = {"just a moment", "access denied", "attention required", "verify you are human"}
 
 
@@ -166,7 +162,7 @@ def _freewebnovel(soup: BeautifulSoup, title: str, author: str) -> dict:
     for node in header:
         if node.name == "a":
             href = urlsplit(node.get("href") or "").path.casefold()
-            value = _txt(node).casefold()
+            value = " ".join(_txt(node).casefold().split())
             if href.startswith(("/sort/completed", "/completed-novel")) or value == "completed":
                 status = "Completed"
             elif value in STATUS:
@@ -213,7 +209,7 @@ def _novelfull(soup: BeautifulSoup, title: str, author: str) -> dict:
         if re.match(r"^genres?\s*:", label, re.I):
             genres.extend(_clean_tags(node.select("a[href]")))
         elif re.match(r"^status\s*:", label, re.I):
-            status = STATUS.get(label.split(":", 1)[-1].strip().casefold(), status)
+            status = STATUS.get(" ".join(label.split(":", 1)[-1].casefold().split()), status)
     if not genres:
         genre_container = next((x for x in info.select(".genres,.genre")
                                 if len(x.select("a")) <= 35), None)
@@ -250,8 +246,9 @@ def _scribblehub(soup: BeautifulSoup, title: str, author: str) -> dict:
     synopsis = _txt(synopsis_node)
     status = ""
     for text in series.stripped_strings:
-        if str(text).strip().casefold() in STATUS:
-            status = STATUS[str(text).strip().casefold()]
+        candidate = " ".join(str(text).casefold().split())
+        if candidate in STATUS:
+            status = STATUS[candidate]
     return {
         **({"description": synopsis[:24000]} if 45 <= len(synopsis) <= 24000 else {}),
         **({"sourceTags": genres} if genres else {}),

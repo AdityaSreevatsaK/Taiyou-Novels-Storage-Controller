@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from taiyou_storage.metadata_repair import (
     MetadataRepairError, _report_path, audit_catalogue, main,
-    missing_fields, plan_repair, validate_patch,
+    missing_fields, plan_repair, validate_patch, normalise_source_status,
 )
 
 ID = "a" * 24
@@ -119,6 +119,38 @@ class OneBookMetadataRepairTests(unittest.TestCase):
         for candidate in invalid:
             with self.subTest(candidate=candidate), self.assertRaises(MetadataRepairError):
                 validate_patch(candidate)
+
+    def test_source_status_aliases_are_canonical_and_source_only(self):
+        cases = {
+            "completed": "Completed", " Completed ": "Completed",
+            "on going": "Ongoing", "IN-PROGRESS": "Ongoing",
+            "Hiatus": "Hiatus", "on hiatus": "Hiatus",
+            " ON  HOLD ": "Hiatus", "discontinued": "Dropped",
+            "Dropped": "Dropped", "cancelled": "Dropped",
+        }
+        for raw, canonical in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(normalise_source_status(raw), canonical)
+                self.assertEqual(validate_patch(patch_data(status=raw))["status"], canonical)
+        for invalid in (None, 42, "", "Finished", "paused forever", "unknown"):
+            with self.subTest(invalid=invalid), self.assertRaises(MetadataRepairError):
+                normalise_source_status(invalid)
+
+    def test_hiatus_repair_preserves_every_personal_field_and_old_status(self):
+        base = {"version": 1, "books": [
+            book(), book(OTHER_ID, "https://novelfull.com/other.html",
+                         status="AncientRawStatus")
+        ]}
+        before = deepcopy(base)
+        result, changed, _ = plan_repair(base, patch_data(status="on hold"))
+        self.assertEqual(changed, ["status"])
+        self.assertEqual(result["books"][0]["metadata"]["status"], "Hiatus")
+        self.assertEqual(result["books"][1]["metadata"]["status"], "AncientRawStatus")
+        self.assertEqual(result["books"][0]["metadata"]["progress"], 65)
+        self.assertEqual(result["books"][0]["metadata"]["personalReview"], "A personal note")
+        self.assertEqual(result["books"][0]["metadata"]["personalTags"], ["Favourite"])
+        self.assertEqual(result["books"][0]["epubPath"], before["books"][0]["epubPath"])
+        self.assertEqual(base, before)
 
     def test_tags_deduplicate_case_insensitively(self):
         normalized = validate_patch(patch_data(sourceTags=["Romance", " romance ", "Drama"]))

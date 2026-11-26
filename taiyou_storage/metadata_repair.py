@@ -30,6 +30,30 @@ FIELDS = ("description", "sourceTags", "status")
 MAX_PATCH_BYTES = 50_000
 MAX_SYNOPSIS = 24_000
 
+# Source publication state, never personal reading progress. Aliases are
+# accepted only for explicitly reviewed source evidence, not inferred.
+SOURCE_STATUS_ALIASES = {
+    "completed": "Completed", "complete": "Completed",
+    "ongoing": "Ongoing", "on going": "Ongoing",
+    "in progress": "Ongoing", "in-progress": "Ongoing",
+    "hiatus": "Hiatus", "on hiatus": "Hiatus",
+    "on hold": "Hiatus", "on-hold": "Hiatus",
+    "dropped": "Dropped", "discontinued": "Dropped",
+    "cancelled": "Dropped", "canceled": "Dropped",
+}
+
+
+def normalise_source_status(value: object) -> str:
+    """Canonicalise only explicitly supplied publication status evidence."""
+    if not isinstance(value, str) or not value.strip():
+        raise MetadataRepairError("Invalid source publication status")
+    key = " ".join(value.casefold().split())
+    result = SOURCE_STATUS_ALIASES.get(key)
+    if result is None:
+        raise MetadataRepairError("Unknown source publication status")
+    return result
+
+
 
 class MetadataRepairError(ValueError):
     """A proposed metadata-only change failed validation."""
@@ -129,9 +153,7 @@ def validate_patch(document: object) -> dict:
             raise MetadataRepairError("No source genres supplied")
         result["sourceTags"] = result_tags
     if "status" in document:
-        if document["status"] not in ("Completed", "Ongoing"):
-            raise MetadataRepairError("status must be Completed or Ongoing")
-        result["status"] = document["status"]
+        result["status"] = normalise_source_status(document["status"])
     return result
 
 
@@ -227,7 +249,7 @@ def _local_prepare(catalogue: dict) -> dict:
     print("Leave any field blank to leave it unchanged.")
     description = input("Verified source synopsis (paste on one line): ").strip()
     genres = input("Verified source genres, comma-separated: ").strip()
-    status = input("Publication status, Completed / Ongoing / blank: ").strip()
+    status = input("Publication status, Completed / Ongoing / Hiatus / Dropped / blank: ").strip()
     doc = {"id": book["id"], "sourceUrl": url}
     if description:
         doc["description"] = description

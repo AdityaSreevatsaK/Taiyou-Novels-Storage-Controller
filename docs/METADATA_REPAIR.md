@@ -7,7 +7,7 @@ ratings, reviews, collections or other personal metadata.
 
 ## Current publication-status support
 
-The current implementation accepts canonical source publication statuses **`Completed`** and **`Ongoing`** only. The public source parser recognises a limited set of aliases for those two values. Canonical **`Hiatus`** and **`Dropped`** support is still open in [issue #46](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/46); do not assume these values are accepted by the current CLI or imported research validator.
+The Controller accepts canonical **`Completed`**, **`Ongoing`**, **`Hiatus`** and **`Dropped`** source publication statuses. Reviewed aliases such as `on going`, `on hiatus`, `on hold` and `discontinued` are normalised to canonical spellings during metadata repair or verified page parsing. Unknown historical status strings in existing catalogue entries remain readable and are not rewritten. An unrecognised status in a new repair proposal is rejected.
 
 Publication status describes the source novel, not the reader's personal completion state. Never infer it from chapter count, EPUB contents, progress, `completedAt`, genres or an unverified listing. The issue is a code/contract task and does not authorise changing any production novel's status.
 
@@ -163,7 +163,7 @@ GitHub repository. GitHub Actions must not publish these files as artefacts.
 
 1. Choose **2: Prepare JSON for one novel**. Enter the *exact* novel title
    or its unique 24-character ID. Paste the source's actual synopsis on
-   one line, genre names separated by commas, and `Completed` or `Ongoing`.
+   one line, genre names separated by commas, and `Completed`, `Ongoing`, `Hiatus` or `Dropped`.
    Leave fields blank to keep them unchanged.
 2. The tool saves **`reports/metadata-repair.json` locally**, with the
    novel's immutable ID and full source URL for double identity verification.
