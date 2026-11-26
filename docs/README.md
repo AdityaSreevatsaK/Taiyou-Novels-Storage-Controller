@@ -25,6 +25,7 @@ background only and contains out-of-date paths/workflows.
 | --- | --- |
 | [User guide and command reference](USER_GUIDE.md) | All Windows launchers, Python commands, ZIP downloads, reports, covers and limits |
 | [Smart upload and deduplication](SMART_UPLOAD.md) | Matching, conflict detection, edition safety, first upload and cloud commit behaviour |
+| [Retriever → Controller → Library contract](ECOSYSTEM_IMPORT_CONTRACT.md) | Cross-repo export manifest, private HF import and Reader compatibility, with exact acceptance evidence |
 | [Library inspection](LIBRARY_INSPECTION.md) | Chapter inventory, cover audit, integrity, local Retriever comparison, evidence levels |
 | [Source metadata audit and repair](METADATA_REPAIR.md) | Missing synopsis/genre/status report and safe one-novel catalogue-only JSON repair |
 | [Data safety and recovery](SAFETY_AND_RECOVERY.md) | Cache cleanup, backups, full reset, confirmation and recovery limitations |

@@ -5,6 +5,67 @@
 > **This is a dated snapshot, not a live status API.** It was inspected against remote `master` at `a40c01173df425aa94c445e7e221fd61f8e7fb34` on **21 November 2026**. Before every substantial task, agents MUST refresh the live repository, Git and issue state as described in [AGENTS.md](../AGENTS.md) and [AI_AGENT_PLAYBOOK.md](AI_AGENT_PLAYBOOK.md). Never assume this file is still current.
 
 
+## Verified engineering and cleanup, 26 November 2026
+
+The Controller's `master` was refreshed at
+`157c5fea2d04f9d5c9b84e57d0a487ee0c0fa84e` before this
+cleanup branch. At that SHA, the three engineering PRs
+[#70](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/pull/70),
+[#71](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/pull/71)
+and [#72](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/pull/72)
+were merged. The full Linux/Windows Python 3.11/3.12 CI matrix and
+dependency audit passed on every final PR commit; master CI
+[#45836547381](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/runs/45836547381)
+and release
+[#45836668438](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/runs/45836668438)
+both passed. No Controller PRs remained open. Issues
+[#46](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/46)
+and [#54](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/issues/54)
+were both closed.
+
+- **Implemented:** Canonical source-only publication statuses
+  `Completed/Ongoing/Hiatus/Dropped` and verified aliases in
+  parsing, guarded add-only metadata repair, unit tests and docs.
+  Existing raw statuses and personal reader state are unchanged.
+- **Implemented:** Validate an authentic EPUB2/EPUB3 OPF-declared
+  cover or uniquely named companion image inside a downloaded novel
+  ZIP; preview, verify and atomically link it with the novel import.
+  Sidecar covers take precedence, and already-linked covers are not
+  replaced. Missing genuine art is allowed.
+- **Implemented and verified offline:** Retriever-shaped export
+  manifest -> safe Controller bundle verification -> fake-HF preview,
+  guarded batch apply, interrupted-batch retry and idempotent replay.
+  Cover-tree symlinks and malformed items are rejected.
+- **Live synthetic acceptance passed:** Private test-only import
+  [#45836547414](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/runs/45836547414)
+  verified 3 ZIPs, imported 3 novels plus 1 cover and independently
+  checked private book bytes/cover/catalogue, then replayed with zero
+  new commits. No private production data was accessed or modified.
+- **Previously verified backup:** Synthetic `full-verified`
+  [#45436984800](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/runs/45436984800)
+  backed up 6 objects and independently rehydrated/verified them.
+  Remote-first [#45435388468](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/runs/45435388468)
+  confirmed Xet-less LFS rejection and fail-fast handling.
+- **Cleanup proposed on this branch:** Remove 3 now-consumed
+  test-only workflow YAMLs, retaining 9 production and
+  maintenance workflows, guarded synthetic Python harnesses,
+  regression tests and historical run evidence. Confirm the
+  cleanup PR and CI before treating deletion as merged.
+
+**Outstanding live boundary:** No genuine exported Retriever ZIP
+artefact was downloaded into the Controller test, no production HF
+import or full snapshot was performed, and no browser/OAuth/device
+acceptance of freshly imported novels was performed. The 26 November
+Retriever bulk-download run
+[#45833724138](https://github.com/RichardDaffern/Novel-Retriever/actions/runs/45833724138)
+failed before acquisition because 17 new titles exceeded its
+10-title-per-run limit. This is a Retriever workflow input constraint,
+not evidence of Controller import failure.
+
+Earlier 21–24 November proposal and baseline sections below are
+**dated historical snapshots** and must never supersede this verified
+status or a newer live audit.
+
 ## Dated follow-up: 23 November 2026 (proposed test-only acceptance)
 
 After refreshing remote `master` at `d021faae16668fb8555df8c79293c2af2b75b1ba`
