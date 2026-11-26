@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import sys
 from tempfile import TemporaryDirectory
+from zipfile import ZipFile
 
 from .cloud_import import BundleError, check_bundle
 from .core import sha256_file
@@ -48,6 +49,19 @@ def run_acceptance(api, token: str, repo: str) -> dict[str, int]:
         root = Path(td)
         incoming = retriever_bundle(root, 2)
         cover_novel = make_embedded_fixture(incoming / "novels")
+        # Match the actual Retriever's dedupe-safe position/filename contract.
+        chapter = b"Independent synthetic EPUB companion chapter."
+        with ZipFile(cover_novel, "r") as archive:
+            payload = {entry.filename: archive.read(entry)
+                       for entry in archive.infolist() if not entry.is_dir()}
+        payload["novel/chapters.json"] = json.dumps([{
+            "position": 1, "file": "chapter_0001.txt",
+            "sha256": sha256(chapter).hexdigest(), "title": "First"
+        }]).encode()
+        payload["novel/chapter_0001.txt"] = chapter
+        with ZipFile(cover_novel, "w") as archive:
+            for name, raw in sorted(payload.items()):
+                archive.writestr(name, raw)
         manifest = json.loads((incoming / "manifest.json").read_text(encoding="utf8"))
         manifest["novels"].append({
             "file": "novels/" + cover_novel.name,
