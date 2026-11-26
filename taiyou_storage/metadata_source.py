@@ -14,7 +14,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from bs4 import BeautifulSoup, Tag
 
 from .core import normalized_title
-from .metadata_repair import MetadataRepairError, _source_key
+from .metadata_repair import MetadataRepairError, _source_key, SOURCE_STATUS_ALIASES
 
 MAX_HTML = 3 * 1024 * 1024
 SITES = ("freewebnovel.com", "novelfull.com", "scribblehub.com")
@@ -23,11 +23,7 @@ BOOK_PATHS = {
     "novelfull.com": re.compile(r"^/[a-z0-9][a-z0-9-]*\.html$", re.I),
     "scribblehub.com": re.compile(r"^/series/[0-9]+/[a-z0-9][a-z0-9-]*/$", re.I),
 }
-STATUS = {
-    "completed": "Completed", "complete": "Completed",
-    "ongoing": "Ongoing", "on going": "Ongoing",
-    "in progress": "Ongoing", "in-progress": "Ongoing",
-}
+STATUS = SOURCE_STATUS_ALIASES
 INVALID_TITLE = {"just a moment", "access denied", "attention required", "verify you are human"}
 
 
