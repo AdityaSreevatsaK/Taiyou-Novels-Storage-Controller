@@ -114,6 +114,30 @@ This bridge supports **completed consolidated exports only**, not arbitrary part
 No local download is required for exported Retriever novels. Files found **only on your Windows disk** must still be uploaded through the normal `01_bulk_upload.cmd` path.
 
 
+## Retriever → Controller synthetic cloud-import acceptance
+
+The Controller's `hf-cloud-import.yml` supports an **opt-in** import from
+a completed Novel-Retriever export artefact. The real producer writes a
+`manifest.json` containing `exported_novels`, a `novels` array with
+`file`, `zip_sha256` and `bytes`, and explicit
+`conflicting_editions`/`invalid_archives` arrays. The Controller must
+verify the complete directory and every ZIP SHA-256 before preview.
+
+One isolated, master-gated **test-only** workflow,
+`hf-disposable-cloud-import-acceptance.yml`, exercises the same
+`cloud_import.check_bundle` and `upload.main` implementation on
+fictional EPUBs, a declared cover, a newly created **private**
+disposable HF dataset and `HF_DISPOSABLE_TEST_TOKEN`. It tests:
+read-only preview, exact bundle checksums, reviewed guarded upload,
+stable IDs, ZIP/EPUB/cover read-back, idempotent replay and rejection
+of invalid export cover symlinks. It never uses production
+`HF_STORAGE_CONTROLLER_TOKEN`, dispatches novel downloads or accesses
+the production library. A green offline CI check is not live HF proof.
+
+The one-shot synthetic workflow can be retired after a successful
+evidence-backed run; retain production cloud-import and its explicit
+`apply_changes: false` default. No automatic production apply.
+
 ## Disposable real-HF backup acceptance
 
 [**HF - Disposable remote backup acceptance**](https://github.com/AdityaSreevatsaK/Taiyou-Novels-Storage-Controller/actions/workflows/hf-disposable-backup-acceptance.yml)
