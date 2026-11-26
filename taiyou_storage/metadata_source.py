@@ -162,7 +162,7 @@ def _freewebnovel(soup: BeautifulSoup, title: str, author: str) -> dict:
     for node in header:
         if node.name == "a":
             href = urlsplit(node.get("href") or "").path.casefold()
-            value = _txt(node).casefold()
+            value = " ".join(_txt(node).casefold().split())
             if href.startswith(("/sort/completed", "/completed-novel")) or value == "completed":
                 status = "Completed"
             elif value in STATUS:
@@ -209,7 +209,7 @@ def _novelfull(soup: BeautifulSoup, title: str, author: str) -> dict:
         if re.match(r"^genres?\s*:", label, re.I):
             genres.extend(_clean_tags(node.select("a[href]")))
         elif re.match(r"^status\s*:", label, re.I):
-            status = STATUS.get(label.split(":", 1)[-1].strip().casefold(), status)
+            status = STATUS.get(" ".join(label.split(":", 1)[-1].casefold().split()), status)
     if not genres:
         genre_container = next((x for x in info.select(".genres,.genre")
                                 if len(x.select("a")) <= 35), None)
@@ -246,8 +246,9 @@ def _scribblehub(soup: BeautifulSoup, title: str, author: str) -> dict:
     synopsis = _txt(synopsis_node)
     status = ""
     for text in series.stripped_strings:
-        if str(text).strip().casefold() in STATUS:
-            status = STATUS[str(text).strip().casefold()]
+        candidate = " ".join(str(text).casefold().split())
+        if candidate in STATUS:
+            status = STATUS[candidate]
     return {
         **({"description": synopsis[:24000]} if 45 <= len(synopsis) <= 24000 else {}),
         **({"sourceTags": genres} if genres else {}),
