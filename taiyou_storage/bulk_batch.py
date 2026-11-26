@@ -141,8 +141,17 @@ def commit_batch(api, repo: str, token: str, items: list[dict], *,
             if sha256_file(item["path"]) != item["digest"]:
                 raise UploadError("Local novel ZIP changed after preview")
             cover = item.get("cover")
-            if cover and sha256_file(cover["path"]) != cover["sha256"]:
-                raise UploadError("Local cover changed after preview")
+            if cover:
+                if "bytes" in cover:
+                    raw = cover["bytes"]
+                    if (not isinstance(raw, bytes) or
+                            hashlib.sha256(raw).hexdigest() != cover["sha256"]):
+                        raise UploadError("Embedded cover changed after preview")
+                    from .inspection import valid_image
+                    if not valid_image(raw, cover["extension"]):
+                        raise UploadError("Embedded cover is no longer valid")
+                elif sha256_file(cover["path"]) != cover["sha256"]:
+                    raise UploadError("Local cover changed after preview")
             entry, _ = matching_entry(books, item["metadata"], item["epub"])
             chosen_id = (entry["id"] if entry else
                          hashlib.sha256(item["epub"]).hexdigest()[:24])
@@ -200,9 +209,15 @@ def commit_batch(api, repo: str, token: str, items: list[dict], *,
                     path_in_repo=manifest_path(planned_book),
                     path_or_fileobj=str(sidecar)))
             if cover and remote_hashes.get(cover["destination"]) != cover["sha256"]:
+                if "bytes" in cover:
+                    staged_cover = workspace / f"{index}{cover['extension']}"
+                    staged_cover.write_bytes(cover["bytes"])
+                    path_or_fileobj = str(staged_cover)
+                else:
+                    path_or_fileobj = str(cover["path"])
                 staged_ops.append(CommitOperationAdd(
                     path_in_repo=cover["destination"],
-                    path_or_fileobj=str(cover["path"])))
+                    path_or_fileobj=path_or_fileobj))
                 counters["covers"] += 1
 
         if not staged_ops:
